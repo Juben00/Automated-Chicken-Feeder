@@ -152,17 +152,14 @@
     <main class="container align-items-center mt-4 p-4">
         {% with messages = get_flashed_messages() %}
             {% if messages %}
-                <div style="position: relative;">
-                    {% for message in messages %}
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert"
-                             style="position: absolute; top: 140px; left: 0; right: 0; z-index: 1050; width: 100%; max-width: 600px; margin: 0 auto;">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                    {% endfor %}
+                {% for message in messages %}
+                <div class="alert alert-success alert-dismissible fade show" role="alert"
+                        style="position: absolute; top: 70px; left: 0; right: 0; z-index: 1050; width: 100%; max-width: 600px; margin: 0 auto;">
+                    <i class="fas fa-check-circle me-2"></i>
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
-                <div style="height: 170px;"></div> <!-- Spacer to push content down if alert is shown -->
+                {% endfor %} <!-- Spacer to push content down if alert is shown -->
             {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
