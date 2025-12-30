@@ -1,0 +1,5 @@
+{
+    "device_id": "pi_kleo",
+    "upload_endpoint": "http://192.168.1.124:5000/api/upload_feed_image",
+    "user_token": "8ysMBxU6wqJIr_V12ZLwyGD34rfalEaXsDdbYw9XemM"
+}

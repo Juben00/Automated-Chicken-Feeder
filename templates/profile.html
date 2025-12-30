@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - Chicken Feed Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h2">
+            <i class="fas fa-user me-2"></i>User Profile
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-cog me-2"></i>Account Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" value="{{ user.username }}" disabled>
+                        <small class="text-muted">Username cannot be changed</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email Address</label>
+                        <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                    </div>
+
+                    <hr>
+
+                    <h6 class="mb-3">
+                        <i class="fas fa-lock me-1"></i>Change Password
+                    </h6>
+
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label">Current Password</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password">
+                        <small class="text-muted">Leave blank if not changing password</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label">New Password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password">
+                        <small class="text-muted">Minimum 6 characters</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password">
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-3">
+                        <label for="iot_device_url" class="form-label">
+                            <i class="fas fa-wifi me-1"></i>IoT Device URL
+                        </label>
+                        <input type="text" class="form-control" id="iot_device_url" name="iot_device_url" 
+                               placeholder="http://192.168.1.100:5000" 
+                               value="{{ user.iot_device_url or '' }}">
+                        <small class="form-text text-muted">
+                            Examples:<br>
+                            • <code>http://192.168.1.100:5000</code><br>
+                            • <code>http://pi_klei:5000</code><br>
+                            • <code>http://your-device-hostname:5000</code>
+                        </small>
+                    </div>
+
+                    {% if user.iot_device_url %}
+                    <div class="alert alert-info" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Current Device:</strong> {{ user.iot_device_url }}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>No device configured.</strong> Scheduled feeds will fail without an IoT device URL.
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Save Changes
+                        </button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Device Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6>What is an IoT Device URL?</h6>
+                    <p class="text-muted">
+                        The IoT Device URL is the network address where your Raspberry Pi or IoT device is running. 
+                        It's used to send automated feed dispensing commands to your device.
+                    </p>
+                </div>
+
+                <div class="mb-3">
+                    <h6>How to find your device URL:</h6>
+                    <ol class="text-muted small">
+                        <li>Note your Raspberry Pi's IP address or hostname</li>
+                        <li>Make sure the IoT app is running on port 5000</li>
+                        <li>Format: <code>http://[IP_OR_HOSTNAME]:5000</code></li>
+                        <li>Test by visiting the URL in your browser</li>
+                    </ol>
+                </div>
+
+                <div class="mb-3">
+                    <h6>Example setup:</h6>
+                    <div class="bg-light p-3 rounded">
+                        <small>
+                            Raspberry Pi IP: <code>192.168.1.100</code><br>
+                            Device URL: <code>http://192.168.1.100:5000</code>
+                        </small>
+                    </div>
+                </div>
+
+                {% if user.iot_device_url %}
+                <div class="alert alert-success" role="alert">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>Device Configured!</strong><br>
+                    Your schedules will automatically dispense feed to: <code>{{ user.iot_device_url }}</code>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
