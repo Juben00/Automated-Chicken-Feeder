@@ -4,3 +4,13 @@ Flask-Login==0.6.3
 APScheduler==3.10.4
 requests==2.31.0
 Werkzeug==2.3.7
+python-dotenv
+torch
+matplotlib
+numpy
+opencv-python
+torchvision
+tqdm
+pytorch-msssim
+pillow
+# RPi.GPIO  # Uncomment if running on Raspberry Pi hardware
