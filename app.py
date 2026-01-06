@@ -74,8 +74,11 @@ def load_user(user_id):
 
 # Initialize scheduler for automated feeding
 scheduler = BackgroundScheduler()
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
+
+def start_scheduler_once():
+    if not scheduler.running:
+        scheduler.start()
+
 
 @app.context_processor
 def inject_datetime():
@@ -269,12 +272,6 @@ def scheduled_feed_task(schedule_id):
             db.session.add(log_entry)
             db.session.commit()
 
-# Routes
-@app.route('/')
-def index():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-    return redirect(url_for('dashboard'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -814,7 +811,6 @@ def manual_dispense():
             'success': False,
             'error': error_message
         }), 500
-        start_scheduler()
 
 @app.route('/logs')
 @login_required
