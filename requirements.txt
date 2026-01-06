@@ -5,4 +5,5 @@ APScheduler==3.10.4
 requests==2.31.0
 Werkzeug==2.3.7
 python-dotenv==1.2.1
+gunicorn
 # RPi.GPIO  # Uncomment if running on Raspberry Pi hardware
