@@ -6,4 +6,10 @@ requests==2.31.0
 Werkzeug==2.3.7
 python-dotenv==1.2.1
 gunicorn
+# For ML features
+torch
+# For image/ML features
+numpy
+pillow
+torchvision
 # RPi.GPIO  # Uncomment if running on Raspberry Pi hardware
