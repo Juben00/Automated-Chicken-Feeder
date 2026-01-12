@@ -380,6 +380,20 @@ def register():
         return redirect(url_for('login'))
     return render_template('register.html')
 
+# --- OVERRIDE ALL USER ROUTES TO BLOCK ADMINS ---
+from flask import abort
+from flask_login import current_user
+
+@app.before_request
+def restrict_admin_from_user_pages():
+    # Only block if admin is logged in and trying to access non-admin pages
+    if current_user.is_authenticated and getattr(current_user, 'is_admin', False):
+        admin_paths = ['/admin', '/admin/', '/admin/dashboard', '/admin/config', '/admin/create', '/admin/feed-ratio']
+        if not any(request.path.startswith(p) for p in admin_paths):
+            # Allow static and logout
+            if not request.path.startswith('/static') and not request.path.startswith('/logout'):
+                return redirect(url_for('admin.dashboard'))
+
 # Helper: require admin
 def require_admin():
     if not current_user.is_authenticated or not getattr(current_user, 'is_admin', False):
