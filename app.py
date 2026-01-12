@@ -284,7 +284,7 @@ def login():
             login_user(user)
             return redirect(url_for('dashboard'))
         else:
-            flash('Invalid username or password')
+            flash('Invalid username or password', 'danger')
     
     return render_template('login.html')
 
@@ -310,26 +310,26 @@ def profile():
         # Validate email uniqueness (if changed)
         if email and email != current_user.email:
             if User.query.filter_by(email=email).first():
-                flash('Email already registered.', 'error')
+                flash('Email already registered.', 'danger')
                 return redirect(url_for('profile'))
         
         # Handle password change
         if new_password or current_password or confirm_password:
             # Password change requested
             if not current_password:
-                flash('Current password required to change password.', 'error')
+                flash('Current password required to change password.', 'danger')
                 return redirect(url_for('profile'))
             
             if not check_password_hash(current_user.password_hash, current_password):
-                flash('Current password is incorrect.', 'error')
+                flash('Current password is incorrect.', 'danger')
                 return redirect(url_for('profile'))
             
             if len(new_password) < 6:
-                flash('New password must be at least 6 characters long.', 'error')
+                flash('New password must be at least 6 characters long.', 'danger')
                 return redirect(url_for('profile'))
             
             if new_password != confirm_password:
-                flash('New password and confirmation do not match.', 'error')
+                flash('New password and confirmation do not match.', 'danger')
                 return redirect(url_for('profile'))
             
             # Update password
@@ -357,15 +357,28 @@ def register():
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         iot_device_url = request.form.get('iot_device_url', '').strip()
+        
+        # Check for duplicate username
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('Username already exists. Please choose a different one.', 'danger')
+            return redirect(url_for('register'))
+        
+        # Check for duplicate email
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            flash('Email already registered. Please use a different email.', 'danger')
+            return redirect(url_for('register'))
+        
         if not username or not email or not password:
-            flash('All fields are required.')
+            flash('All fields are required.', 'danger')
             return redirect(url_for('register'))
         # uniqueness checks
         if User.query.filter_by(username=username).first():
-            flash('Username already taken.')
+            flash('Username already taken.', 'danger')
             return redirect(url_for('register'))
         if User.query.filter_by(email=email).first():
-            flash('Email already registered.')
+            flash('Email already registered.', 'danger')
             return redirect(url_for('register'))
         user = User(
             username=username,
@@ -376,7 +389,7 @@ def register():
         )
         db.session.add(user)
         db.session.commit()
-        flash('Account created. You may now log in.')
+        flash('Account created. You may now log in.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html')
 
@@ -397,7 +410,7 @@ def restrict_admin_from_user_pages():
 # Helper: require admin
 def require_admin():
     if not current_user.is_authenticated or not getattr(current_user, 'is_admin', False):
-        flash('Unauthorized: admin access required.')
+        flash('Unauthorized: admin access required.', 'danger')
         return False
     return True
 
@@ -420,13 +433,13 @@ def admin_create_user():
         password = request.form.get('password', '')
         is_admin = bool(request.form.get('is_admin'))
         if not username or not email or not password:
-            flash('Username, email and password are required.')
+            flash('Username, email and password are required.', 'danger')
             return redirect(url_for('admin_create_user'))
         if User.query.filter_by(username=username).first():
-            flash('Username already exists.')
+            flash('Username already exists.', 'danger'  )
             return redirect(url_for('admin_create_user'))
         if User.query.filter_by(email=email).first():
-            flash('Email already registered.')
+            flash('Email already registered.', 'danger')
             return redirect(url_for('admin_create_user'))
         u = User(
             username=username,
@@ -436,7 +449,7 @@ def admin_create_user():
         )
         db.session.add(u)
         db.session.commit()
-        flash('User created successfully.')
+        flash('User created successfully.', 'success')
         return redirect(url_for('admin_dashboard'))
     return render_template('admin/create_user.html')
 
@@ -447,7 +460,7 @@ def admin_edit_user(user_id):
         return redirect(url_for('dashboard'))
     user = db.session.get(User, user_id)
     if not user:
-        flash('User not found.')
+        flash('User not found.', 'danger')
         return redirect(url_for('admin_dashboard'))
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -456,10 +469,10 @@ def admin_edit_user(user_id):
         is_admin = bool(request.form.get('is_admin'))
         # uniqueness checks (exclude this user)
         if username and username != user.username and User.query.filter_by(username=username).first():
-            flash('Username already taken.')
+            flash('Username already taken.', 'danger')
             return redirect(url_for('admin_edit_user', user_id=user_id))
         if email and email != user.email and User.query.filter_by(email=email).first():
-            flash('Email already registered.')
+            flash('Email already registered.', 'danger')
             return redirect(url_for('admin_edit_user', user_id=user_id))
         if username:
             user.username = username
@@ -469,7 +482,7 @@ def admin_edit_user(user_id):
         if password:
             user.password_hash = generate_password_hash(password)
         db.session.commit()
-        flash('User updated.')
+        flash('User updated.', 'success')
         return redirect(url_for('admin_dashboard'))
     return render_template('admin/edit_user.html', user=user)
 # Device registration endpoint
@@ -615,25 +628,25 @@ def admin_delete_user(user_id):
         return redirect(url_for('dashboard'))
     user = db.session.get(User, user_id)
     if not user:
-        flash('User not found.')
+        flash('User not found.', 'danger')
         return redirect(url_for('admin_dashboard'))
     # Prevent deleting yourself
     if user.id == current_user.id:
-        flash('You cannot delete your own account.')
+        flash('You cannot delete your own account.', 'danger')
         return redirect(url_for('admin_dashboard'))
     # Ensure at least one admin remains
     if user.is_admin:
         other_admins = User.query.filter(User.is_admin == True, User.id != user.id).count()
         if other_admins == 0:
-            flash('Cannot delete the last admin user.')
+            flash('Cannot delete the last admin user.', 'danger')
             return redirect(url_for('admin_dashboard'))
     try:
         db.session.delete(user)
         db.session.commit()
-        flash('User deleted.')
+        flash('User deleted.', 'success')
     except Exception as e:
         db.session.rollback()
-        flash('Error deleting user.')
+        flash('Error deleting user.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/dashboard', methods=['GET', 'POST'])
@@ -709,7 +722,7 @@ def add_schedule():
         
         # --- Limit: 20-150 grams per feeding ---
         if amount_grams < 20 or amount_grams > 150:
-            flash('Amount must be between 20 and 150 grams (for 1-5 chickens, 20-30g each).')
+            flash('Amount must be between 20 and 150 grams (for 1-5 chickens, 20-30g each).', 'danger')
             return redirect(url_for('add_schedule'))
         
         schedule = FeedSchedule(
@@ -734,10 +747,10 @@ def add_schedule():
             logger.info(f"Added schedule {schedule.id} to scheduler for {feed_time}")
         except Exception as e:
             logger.error(f"Error adding job to scheduler: {str(e)}")
-            flash('Schedule created but failed to add to scheduler. Please restart the app.')
+            flash('Schedule created but failed to add to scheduler. Please restart the app.', 'warning')
             return redirect(url_for('schedules'))
         
-        flash('Schedule added successfully!')
+        flash('Schedule added successfully!', 'success')
         return redirect(url_for('schedules'))
     
     return render_template('add_schedule.html')
@@ -747,10 +760,10 @@ def add_schedule():
 def delete_schedule(schedule_id):
     schedule = db.session.get(FeedSchedule, schedule_id)
     if not schedule:
-        flash('Schedule not found')
+        flash('Schedule not found', 'danger')
         return redirect(url_for('schedules'))
     if schedule.created_by != current_user.id:
-        flash('Unauthorized')
+        flash('Unauthorized', 'danger')
         return redirect(url_for('schedules'))
     
     # Remove from scheduler
@@ -762,7 +775,7 @@ def delete_schedule(schedule_id):
     db.session.delete(schedule)
     db.session.commit()
     
-    flash('Schedule deleted successfully!')
+    flash('Schedule deleted successfully!', 'success')
     return redirect(url_for('schedules'))
 
 @app.route('/schedules/<int:schedule_id>/toggle', methods=['POST'])

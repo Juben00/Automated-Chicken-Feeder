@@ -150,7 +150,7 @@
     </nav>
     {% endif %}
 
-    <main class="container align-items-center mt-4 p-4">
+    <main class="container-fluid align-items-center">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}

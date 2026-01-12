@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Register - Chicken Feed Management{% endblock %}
 {% block content %}
-<div class="row justify-content-center align-items-center"style="min-height: 100vh; display: flex; align-items: center;">
+<div class="row justify-content-center align-items-center"style="min-height: 100vh; display: flex; align-items: center; background: url('{{ url_for('static', filename='img/pastured-freerange-chickens-organic-poultry-natural-farminggenerative-ai_2431-1192 (1).png') }}') center center/cover no-repeat;">
     <div class="col-md-6 col-lg-4">
-        <div class="card shadow-lg border-0" style="background:rgba(255,255,255,0.97);">
+        <div class="card shadow-lg border-0" style="background:rgba(255,255,255,0.67);">
             <div class="card-body p-4">
                 <div class="text-center mb-4">
                     <img src="{{ url_for('static', filename='img/chicken-logo.png') }}" alt="Logo" style="width:200px;height:160px;" class="mb-2">
@@ -30,13 +30,6 @@
                         <div class="input-group">
                             <span class="input-group-text"><i class="fas fa-lock"></i></span>
                             <input type="password" class="form-control" id="password" name="password" placeholder="password" required>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="iot_device_url" class="form-label text-primary">IoT Device URL</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-network-wired"></i></span>
-                            <input type="text" class="form-control" id="iot_device_url" name="iot_device_url" placeholder="http://device-ip-or-url" required>
                         </div>
                     </div>
                     <div class="d-grid">
