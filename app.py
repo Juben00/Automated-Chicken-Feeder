@@ -451,7 +451,7 @@ def admin_create_user():
         db.session.commit()
         flash('User created successfully.', 'success')
         return redirect(url_for('admin_dashboard'))
-    return render_template('admin/create_user.html')
+    return render_template('admin/dashboard.html')
 
 @app.route('/admin/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
