@@ -272,6 +272,13 @@ def scheduled_feed_task(schedule_id):
             db.session.add(log_entry)
             db.session.commit()
 
+@app.route('/admin/users')
+@login_required
+def admin_user_dashboard():
+    if not require_admin():
+        return redirect(url_for('dashboard'))
+    users = User.query.order_by(User.created_at.desc()).all()
+    return render_template('admin/users.html', users=users)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -450,8 +457,8 @@ def admin_create_user():
         db.session.add(u)
         db.session.commit()
         flash('User created successfully.', 'success')
-        return redirect(url_for('admin_dashboard'))
-    return render_template('admin/dashboard.html')
+        return redirect(url_for('admin_user_dashboard'))
+    return render_template('admin/create_user.html')
 
 @app.route('/admin/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -483,7 +490,7 @@ def admin_edit_user(user_id):
             user.password_hash = generate_password_hash(password)
         db.session.commit()
         flash('User updated.', 'success')
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_user_dashboard'))
     return render_template('admin/edit_user.html', user=user)
 # Device registration endpoint
 @app.route('/register_device', methods=['POST'])
@@ -629,17 +636,17 @@ def admin_delete_user(user_id):
     user = db.session.get(User, user_id)
     if not user:
         flash('User not found.', 'danger')
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_user_dashboard'))
     # Prevent deleting yourself
     if user.id == current_user.id:
         flash('You cannot delete your own account.', 'danger')
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_user_dashboard'))
     # Ensure at least one admin remains
     if user.is_admin:
         other_admins = User.query.filter(User.is_admin == True, User.id != user.id).count()
         if other_admins == 0:
             flash('Cannot delete the last admin user.', 'danger')
-            return redirect(url_for('admin_dashboard'))
+            return redirect(url_for('admin_user_dashboard'))
     try:
         db.session.delete(user)
         db.session.commit()
@@ -647,7 +654,7 @@ def admin_delete_user(user_id):
     except Exception as e:
         db.session.rollback()
         flash('Error deleting user.', 'danger')
-    return redirect(url_for('admin_dashboard'))
+    return redirect(url_for('admin_user_dashboard'))
 
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required

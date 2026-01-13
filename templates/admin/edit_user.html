@@ -1,6 +1,7 @@
 {% extends "admin_base.html" %}
 {% block title %}Edit User - Admin{% endblock %}
 {% block content %}
+<div class="container mt-4">
 <div class="row mb-4">
     <div class="col">
         <h1 class="h2">
@@ -38,11 +39,12 @@
                 <button type="submit" class="btn btn-dark">
                     <i class="fas fa-save me-1"></i>Update User
                 </button>
-                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary">
+                <a href="{{ url_for('admin_user_dashboard') }}" class="btn btn-outline-secondary">
                     <i class="fas fa-times me-1"></i>Cancel
                 </a>
             </div>
         </form>
     </div>
+</div>
 </div>
 {% endblock %}
