@@ -52,17 +52,19 @@ def feed_cycle():
                 grams_to_dispense = result.get('grams_to_dispense', 0)
                 # Only dispense if >= 5g
                 if grams_to_dispense >= 5:
-                    # Round down to nearest 5g
-                    num_cycles = int(grams_to_dispense // 5)
-                    actual_dispensed = num_cycles * 5
-                    print(f"Dispensing {actual_dispensed} grams in {num_cycles} cycles...")
-                    for i in range(num_cycles):
-                        print(f"Cycle {i+1}: Rotating servo to 0° (fill cup)")
-                        activate_servo(position=0)
+                    # Each position (0° and 180°) drops 5g of feed
+                    # So one full cycle (0° -> 180°) dispenses 10g total
+                    num_drops = int(grams_to_dispense // 5)
+                    actual_dispensed = num_drops * 5
+                    print(f"Dispensing {actual_dispensed} grams in {num_drops} drops...")
+                    current_position = 180  # Start position
+                    for i in range(num_drops):
+                        # Alternate between 0° and 180°, each drop dispenses 5g
+                        next_position = 0 if current_position == 180 else 180
+                        print(f"Drop {i+1}: Rotating servo to {next_position}° (dispensing 5g)")
+                        activate_servo(position=next_position)
                         time.sleep(0.5)
-                        print(f"Cycle {i+1}: Rotating servo to 180° (drop cup)")
-                        activate_servo(position=180)
-                        time.sleep(0.5)
+                        current_position = next_position
                     return jsonify({"status": "success", "dispensed": actual_dispensed, "response": result})
                 else:
                     print("Requested amount less than 5g. No dispensing.")
@@ -92,18 +94,20 @@ def dispense_route():
         if amount < 5 or amount > 150:
             return jsonify({'error': 'Amount must be between 5 and 150 grams'}), 400
 
-        # run servo in 5g cycles (non-blocking - return response first)
-        num_cycles = amount // 5
-        actual_dispensed = num_cycles * 5
+        # Each position (0° and 180°) drops 5g of feed
+        num_drops = amount // 5
+        actual_dispensed = num_drops * 5
         
         # Start servo in background thread so we can respond immediately
         import threading
         def run_servo():
             try:
-                for i in range(num_cycles):
-                    # move to fill position, then drop
-                    activate_servo(position=0)
-                    activate_servo(position=180)
+                current_position = 180  # Start position
+                for i in range(num_drops):
+                    # Alternate between 0° and 180°, each drop dispenses 5g
+                    next_position = 0 if current_position == 180 else 180
+                    activate_servo(position=next_position)
+                    current_position = next_position
             except Exception as e:
                 print(f"Servo thread error: {e}")
         

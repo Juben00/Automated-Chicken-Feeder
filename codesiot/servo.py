@@ -11,26 +11,27 @@ pwm.start(0)
 def activate_servo(position=None):
     """
     Activate servo motor using RPi.GPIO PWM.
-    position=0: move to 0° (fill cup) - duty cycle 2
-    position=180: move to 180° (drop cup) - duty cycle 12
-    position=None: cycle between 0° and 180°
+    Feed is dispensed at BOTH positions (0° and 180°).
+    position=0: move to 0° (dispense feed) - duty cycle 2
+    position=180: move to 180° (dispense feed) - duty cycle 12
+    position=None: cycle between 0° and 180° (dispenses twice)
     """
     try:
         if position == 0:
             pwm.ChangeDutyCycle(2)  # 0 degrees
-            print("Servo at 0° (fill cup)")
-            time.sleep(0.3)  # Reduced from 0.5 for faster response
+            print("Servo at 0° (feed dispensed)")
+            time.sleep(0.3)  # Wait for feed to drop
         elif position == 180:
             pwm.ChangeDutyCycle(12)  # 180 degrees
-            print("Servo at 180° (drop cup)")
-            time.sleep(0.3)  # Reduced from 0.5 for faster response
+            print("Servo at 180° (feed dispensed)")
+            time.sleep(0.3)  # Wait for feed to drop
         else:
-            # Default: cycle from 0° to 180° and back to 0°
-            pwm.ChangeDutyCycle(2)  # 0 degrees
+            # Default: cycle from 0° to 180° (dispenses at each position)
+            pwm.ChangeDutyCycle(2)  # 0 degrees - dispense
+            print("Servo at 0° (feed dispensed)")
             time.sleep(0.3)
-            pwm.ChangeDutyCycle(12)  # 180 degrees
-            time.sleep(0.3)
-            pwm.ChangeDutyCycle(2)  # back to 0
+            pwm.ChangeDutyCycle(12)  # 180 degrees - dispense
+            print("Servo at 180° (feed dispensed)")
             time.sleep(0.3)
     except Exception as e:
         print(f"Servo error: {e}")

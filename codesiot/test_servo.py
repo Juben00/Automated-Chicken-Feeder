@@ -16,19 +16,19 @@ pwm = GPIO.PWM(servo_pin, 50)  # 50Hz
 pwm.start(0)
 
 try:
-    print("\nMoving to 0° (min)...")
+    print("\nMoving to 0° (feed drops)...")
     pwm.ChangeDutyCycle(2)
     time.sleep(1)
 
-    print("Moving to 180° (max)...")
+    print("Moving to 180° (feed drops)...")
     pwm.ChangeDutyCycle(12)
     time.sleep(1)
 
-    print("Back to 0° (min)...")
+    print("Back to 0° (feed drops)...")
     pwm.ChangeDutyCycle(2)
     time.sleep(1)
 
-    print("Servo test complete!")
+    print("Servo test complete! (3 drops total)")
 finally:
     pwm.stop()
     GPIO.cleanup()
