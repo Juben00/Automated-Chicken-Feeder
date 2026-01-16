@@ -167,7 +167,10 @@ def dispense_feed(amount_grams, trigger_type='manual', schedule_id=None, user_id
     """
     Core function to dispense feed and log the action
     """
+    from utils.email_notifications import send_feeding_notification, send_feeding_failure_notification
+    
     device_url = None
+    user = None
     if user_id:
         user = db.session.get(User, user_id)
         if user and user.iot_device_url:
@@ -185,6 +188,26 @@ def dispense_feed(amount_grams, trigger_type='manual', schedule_id=None, user_id
     )
     db.session.add(log_entry)
     db.session.commit()
+    
+    # Send email notification
+    if user and user.email:
+        try:
+            if success:
+                send_feeding_notification(
+                    user_email=user.email,
+                    username=user.username,
+                    amount_grams=amount_grams,
+                    trigger_type=trigger_type
+                )
+            else:
+                send_feeding_failure_notification(
+                    user_email=user.email,
+                    username=user.username,
+                    error_message=error_message or 'Unknown error'
+                )
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {str(e)}")
+    
     return success, error_message, log_entry.id
 
 def scheduled_feed_task(schedule_id):
@@ -200,6 +223,8 @@ def scheduled_feed_task(schedule_id):
     6. Flask responds to Pi with grams_to_dispense
     7. Pi receives amount and dispenses via servo
     """
+    from utils.email_notifications import send_feeding_notification, send_feeding_failure_notification
+    
     with app.app_context():
         schedule = db.session.get(FeedSchedule, schedule_id)
         if schedule and schedule.is_active:
@@ -285,6 +310,27 @@ def scheduled_feed_task(schedule_id):
             
             db.session.add(log_entry)
             db.session.commit()
+            
+            # Send email notification for scheduled feeds
+            if user and user.email:
+                try:
+                    if log_entry.status == 'success':
+                        send_feeding_notification(
+                            user_email=user.email,
+                            username=user.username,
+                            amount_grams=log_entry.amount_grams,
+                            trigger_type='scheduled',
+                            schedule_name=schedule.name
+                        )
+                    else:
+                        send_feeding_failure_notification(
+                            user_email=user.email,
+                            username=user.username,
+                            error_message=log_entry.error_message or 'Unknown error',
+                            schedule_name=schedule.name
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to send scheduled feed email notification: {str(e)}")
 
 @app.route('/admin/users')
 @login_required
