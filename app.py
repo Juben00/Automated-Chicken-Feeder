@@ -33,7 +33,21 @@ login_manager = LoginManager()
 
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret_key')
+    
+    # Generate secure secret key if not provided
+    secret_key = os.getenv('SECRET_KEY')
+    if not secret_key or secret_key == 'secret_key':
+        # Generate a secure random key and save to .env if possible
+        import secrets as sec
+        secret_key = sec.token_hex(32)
+        logger.warning("Using auto-generated SECRET_KEY. Set SECRET_KEY in .env for production!")
+    app.config['SECRET_KEY'] = secret_key
+    
+    # Security settings for session cookies
+    app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    
     app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'chickenfeeder.sqlite')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -359,11 +373,38 @@ def register():
     Public registration: create a new user account.
     Admin accounts should be created via the admin dashboard.
     """
+    from utils.validators import validate_username, validate_email, validate_password, validate_iot_url, sanitize_string
+    
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         iot_device_url = request.form.get('iot_device_url', '').strip()
+        
+        # Validate username
+        is_valid, error_msg = validate_username(username)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('register'))
+        
+        # Validate email
+        is_valid, error_msg = validate_email(email)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('register'))
+        
+        # Validate password
+        is_valid, error_msg = validate_password(password)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('register'))
+        
+        # Validate IoT URL if provided
+        if iot_device_url:
+            is_valid, error_msg = validate_iot_url(iot_device_url)
+            if not is_valid:
+                flash(error_msg, 'danger')
+                return redirect(url_for('register'))
         
         # Check for duplicate username
         existing_user = User.query.filter_by(username=username).first()
@@ -377,16 +418,6 @@ def register():
             flash('Email already registered. Please use a different email.', 'danger')
             return redirect(url_for('register'))
         
-        if not username or not email or not password:
-            flash('All fields are required.', 'danger')
-            return redirect(url_for('register'))
-        # uniqueness checks
-        if User.query.filter_by(username=username).first():
-            flash('Username already taken.', 'danger')
-            return redirect(url_for('register'))
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered.', 'danger')
-            return redirect(url_for('register'))
         user = User(
             username=username,
             email=email,
@@ -679,6 +710,8 @@ def dashboard():
 @app.route('/devices', methods=['GET', 'POST'])
 @login_required
 def devices():
+    from utils.validators import validate_device_id
+    
     device_message = None
     if request.method == 'POST':
         if 'delete_device' in request.form:
@@ -692,8 +725,11 @@ def devices():
                 device_message = 'Device not found or unauthorized.'
         else:
             device_id = request.form.get('device_id', '').strip()
-            if not device_id:
-                device_message = 'Device ID is required.'
+            
+            # Validate device ID format
+            is_valid, error_msg = validate_device_id(device_id)
+            if not is_valid:
+                device_message = error_msg
             else:
                 # Check if user already has a device (limit to 1)
                 user_device_count = Device.query.filter_by(user_id=current_user.id).count()
@@ -709,7 +745,8 @@ def devices():
                         device = Device(device_id=device_id, user_id=current_user.id, token=token)
                         db.session.add(device)
                         db.session.commit()
-                        device_message = f'Device registered! Token: {token}'
+                        # Don't expose token in message - user can view it via the eye icon
+                        device_message = 'Device registered successfully! Click the eye icon to view your token.'
     user_devices = Device.query.filter_by(user_id=current_user.id).all()
     return render_template('devices.html',
                            user_devices=user_devices,
@@ -724,17 +761,36 @@ def schedules():
 @app.route('/schedules/add', methods=['GET', 'POST'])
 @login_required
 def add_schedule():
+    from utils.validators import validate_schedule_name, validate_amount_grams, sanitize_string
+    
     if request.method == 'POST':
-        name = request.form['name']
-        feed_time_str = request.form['feed_time']
-        amount_grams = int(request.form['amount_grams'])
+        name = request.form.get('name', '').strip()
+        feed_time_str = request.form.get('feed_time', '')
         
-        # Parse time
-        feed_time = datetime.strptime(feed_time_str, '%H:%M').time()
+        # Validate and sanitize schedule name
+        is_valid, error_msg = validate_schedule_name(name)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('add_schedule'))
+        name = sanitize_string(name, max_length=100)
         
-        # --- Limit: 20-150 grams per feeding ---
-        if amount_grams < 20 or amount_grams > 150:
-            flash('Amount must be between 20 and 150 grams (for 1-5 chickens, 20-30g each).', 'danger')
+        # Validate amount
+        try:
+            amount_grams = int(request.form.get('amount_grams', 0))
+        except ValueError:
+            flash('Amount must be a valid number.', 'danger')
+            return redirect(url_for('add_schedule'))
+        
+        is_valid, error_msg = validate_amount_grams(amount_grams)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('add_schedule'))
+        
+        # Validate time format
+        try:
+            feed_time = datetime.strptime(feed_time_str, '%H:%M').time()
+        except ValueError:
+            flash('Invalid time format. Please use HH:MM format.', 'danger')
             return redirect(url_for('add_schedule'))
         
         schedule = FeedSchedule(
@@ -899,10 +955,27 @@ def api_stats():
 def create_admin_user():
     """Create default admin user if none exists"""
     if not User.query.first():
+        # Use environment variables for admin credentials with secure defaults
+        import secrets as sec
+        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+        admin_email = os.getenv('ADMIN_EMAIL', 'admin@chickenfeeder.com')
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        
+        # Generate random password if not provided
+        if not admin_password:
+            admin_password = sec.token_urlsafe(16)
+            print("\n" + "=" * 70)
+            print("IMPORTANT: Default admin account created!")
+            print(f"Username: {admin_username}")
+            print(f"Password: {admin_password}")
+            print("Please change this password immediately after first login!")
+            print("Set ADMIN_PASSWORD in .env to avoid this message.")
+            print("=" * 70 + "\n")
+        
         admin = User(
-            username='admin',
-            email='admin@chickenfeeder.com',
-            password_hash=generate_password_hash('admin123'),
+            username=admin_username,
+            email=admin_email,
+            password_hash=generate_password_hash(admin_password),
             is_admin=True
         )
         db.session.add(admin)
