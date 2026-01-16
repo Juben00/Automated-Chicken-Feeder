@@ -9,6 +9,11 @@
             </h1>
             <p class="lead text-muted mb-0">Key system and feed analytics at a glance.</p>
         </div>
+        <div class="col-auto d-flex align-items-center">
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#exportModal">
+                <i class="fas fa-download me-2"></i>Export Reports
+            </button>
+        </div>
     </div>
     <!-- System Overview Cards -->
     <div class="row mb-4 g-4">
@@ -121,4 +126,201 @@
         });
     </script>
 </div>
+
+<!-- Export Reports Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="exportModalLabel">
+                    <i class="fas fa-file-export me-2"></i>Export System Reports
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="exportForm">
+                    <!-- Date Range Selection -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="fw-bold mb-3"><i class="fas fa-calendar-alt me-2"></i>Select Date Range</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="startMonth" class="form-label">From Month</label>
+                            <input type="month" class="form-control" id="startMonth" name="start_month">
+                            <small class="text-muted">Leave empty for all historical data</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="endMonth" class="form-label">To Month</label>
+                            <input type="month" class="form-control" id="endMonth" name="end_month">
+                            <small class="text-muted">Leave empty for current month</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Date Selection -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <label class="form-label">Quick Select:</label>
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('current')">Current Month</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('last3')">Last 3 Months</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('last6')">Last 6 Months</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('year')">This Year</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setDateRange('all')">All Time</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- Report Type Selection -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <h6 class="fw-bold mb-3"><i class="fas fa-file-csv me-2"></i>Select Report Type</h6>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card h-100 border-primary report-card" onclick="downloadReport('all')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-file-archive fa-3x text-primary mb-3"></i>
+                                    <h6 class="card-title">Complete Report</h6>
+                                    <p class="card-text small text-muted">All data including users, schedules, dispense logs, devices, and summary statistics</p>
+                                    <button type="button" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download All
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 report-card" onclick="downloadReport('dispense_logs')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-history fa-3x text-info mb-3"></i>
+                                    <h6 class="card-title">Dispense Logs</h6>
+                                    <p class="card-text small text-muted">All feed dispensing activities with timestamps, amounts, and status</p>
+                                    <button type="button" class="btn btn-outline-info btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 report-card" onclick="downloadReport('schedules')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-clock fa-3x text-success mb-3"></i>
+                                    <h6 class="card-title">Feed Schedules</h6>
+                                    <p class="card-text small text-muted">All configured feeding schedules with times and amounts</p>
+                                    <button type="button" class="btn btn-outline-success btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 report-card" onclick="downloadReport('users')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-users fa-3x text-warning mb-3"></i>
+                                    <h6 class="card-title">Users Report</h6>
+                                    <p class="card-text small text-muted">User accounts with registration dates and activity summary</p>
+                                    <button type="button" class="btn btn-outline-warning btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 report-card" onclick="downloadReport('devices')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-microchip fa-3x text-secondary mb-3"></i>
+                                    <h6 class="card-title">Devices Report</h6>
+                                    <p class="card-text small text-muted">Registered IoT devices and their configurations</p>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 report-card" onclick="downloadReport('summary')">
+                                <div class="card-body text-center">
+                                    <i class="fas fa-chart-pie fa-3x text-danger mb-3"></i>
+                                    <h6 class="card-title">Summary Statistics</h6>
+                                    <p class="card-text small text-muted">Aggregated metrics and system overview statistics</p>
+                                    <button type="button" class="btn btn-outline-danger btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .report-card {
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+    }
+    .report-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+</style>
+
+<script>
+    function setDateRange(range) {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+        
+        let startMonth = '';
+        let endMonth = `${currentYear}-${currentMonth}`;
+        
+        switch(range) {
+            case 'current':
+                startMonth = endMonth;
+                break;
+            case 'last3':
+                const threeMonthsAgo = new Date(now.setMonth(now.getMonth() - 2));
+                startMonth = `${threeMonthsAgo.getFullYear()}-${(threeMonthsAgo.getMonth() + 1).toString().padStart(2, '0')}`;
+                break;
+            case 'last6':
+                const sixMonthsAgo = new Date(now.setMonth(now.getMonth() - 5));
+                startMonth = `${sixMonthsAgo.getFullYear()}-${(sixMonthsAgo.getMonth() + 1).toString().padStart(2, '0')}`;
+                break;
+            case 'year':
+                startMonth = `${currentYear}-01`;
+                break;
+            case 'all':
+                startMonth = '';
+                endMonth = '';
+                break;
+        }
+        
+        document.getElementById('startMonth').value = startMonth;
+        document.getElementById('endMonth').value = endMonth;
+    }
+    
+    function downloadReport(type) {
+        const startMonth = document.getElementById('startMonth').value;
+        const endMonth = document.getElementById('endMonth').value;
+        
+        let url = `{{ url_for('admin.generate_report') }}?type=${type}`;
+        if (startMonth) url += `&start_month=${startMonth}`;
+        if (endMonth) url += `&end_month=${endMonth}`;
+        
+        window.location.href = url;
+    }
+    
+    // Set default date range to current month on modal open
+    document.getElementById('exportModal').addEventListener('show.bs.modal', function() {
+        setDateRange('current');
+    });
+</script>
 {% endblock %}

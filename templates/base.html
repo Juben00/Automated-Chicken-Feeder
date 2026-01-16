@@ -155,7 +155,7 @@
             {% if messages %}
                 {% for category, message in messages %}
                 <div class="alert alert-{{ 'success' if category in ['success', 'ok'] else 'danger' }} alert-dismissible fade show" role="alert"
-                        style="position: absolute; top: 70px; left: 0; right: 0; z-index: 1050; width: 100%; max-width: 600px; margin: 0 auto;">
+                        style="position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 600px;">
                     <i class="fas fa-{{ 'check-circle' if category in ['success', 'ok'] else 'exclamation-circle' }} me-2"></i>
                     {{ message }}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>

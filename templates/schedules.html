@@ -195,19 +195,28 @@ function deleteSchedule(buttonElement) {
 
 function showAlert(message, type) {
     const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 600px;';
+    
+    const iconMap = {
+        'success': 'check-circle',
+        'danger': 'exclamation-triangle',
+        'warning': 'exclamation-triangle',
+        'info': 'info-circle'
+    };
+    
     alertDiv.innerHTML = `
+        <i class="fas fa-${iconMap[type] || 'info-circle'} me-2"></i>
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
     
-    // Fix: Insert alert after any fixed-position alerts from base.html
-    const main = document.querySelector('main');
-    if (main) {
-        main.appendChild(alertDiv);
-    }
+    document.body.appendChild(alertDiv);
+    
     setTimeout(() => {
-        alertDiv.remove();
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
     }, 5000);
 }
 </script>

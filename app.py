@@ -695,16 +695,21 @@ def devices():
             if not device_id:
                 device_message = 'Device ID is required.'
             else:
-                existing = Device.query.filter_by(device_id=device_id, user_id=current_user.id).first()
-                if existing:
-                    device_message = f'Device already registered. Token: {existing.token}'
+                # Check if user already has a device (limit to 1)
+                user_device_count = Device.query.filter_by(user_id=current_user.id).count()
+                if user_device_count >= 1:
+                    device_message = 'You can only register 1 device. Please delete your existing device first.'
                 else:
-                    import secrets
-                    token = secrets.token_urlsafe(32)
-                    device = Device(device_id=device_id, user_id=current_user.id, token=token)
-                    db.session.add(device)
-                    db.session.commit()
-                    device_message = f'Device registered! Token: {token}'
+                    existing = Device.query.filter_by(device_id=device_id).first()
+                    if existing:
+                        device_message = 'This Device ID is already registered.'
+                    else:
+                        import secrets
+                        token = secrets.token_urlsafe(32)
+                        device = Device(device_id=device_id, user_id=current_user.id, token=token)
+                        db.session.add(device)
+                        db.session.commit()
+                        device_message = f'Device registered! Token: {token}'
     user_devices = Device.query.filter_by(user_id=current_user.id).all()
     return render_template('devices.html',
                            user_devices=user_devices,

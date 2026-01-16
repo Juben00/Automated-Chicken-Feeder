@@ -22,6 +22,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    {% if user_devices|length < 1 %}
                     <form method="POST" class="mb-4">
                         <div class="row g-2 align-items-end">
                             <div class="col-12 col-md-8">
@@ -35,6 +36,11 @@
                             </div>
                         </div>
                     </form>
+                    {% else %}
+                    <div class="alert alert-info mb-4">
+                        <i class="fas fa-info-circle me-2"></i>You have reached the maximum limit of 1 device. Delete your existing device to register a new one.
+                    </div>
+                    {% endif %}
                     {% if device_message %}
                     <div class="alert alert-info mb-4">{{ device_message }}</div>
                     {% endif %}

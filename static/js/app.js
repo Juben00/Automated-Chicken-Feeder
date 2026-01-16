@@ -159,7 +159,7 @@ async function dispenseNow(amount, description = '') {
 function showAlert(message, type = 'info', duration = 5000) {
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.style.cssText = 'top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 600px;';
     
     const iconMap = {
         'success': 'check-circle',
