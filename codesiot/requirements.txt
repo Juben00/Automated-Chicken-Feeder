@@ -1,5 +1,4 @@
 flask
 requests
-gpiozero
-picamera
+RPi.GPIO
 opencv-python
