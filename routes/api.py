@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from utils.model_utils import get_model, predict_pellets
 from utils.model_utils import get_feed_ratio
 from flask_login import current_user
@@ -6,6 +6,10 @@ import datetime
 from utils.logger import logger
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+def get_limiter():
+    """Get the limiter from the current app context."""
+    return current_app.extensions.get('limiter')
 
 # New endpoint for pellet counting
 @api_bp.route('/count_pellets', methods=['POST'])
@@ -51,6 +55,7 @@ def count_pellets():
         return jsonify({'error': str(e)}), 500
 
 # New endpoint for IoT feed image upload and dispensing logic
+# Rate limited to prevent abuse (ML inference is resource-intensive)
 @api_bp.route('/upload_feed_image', methods=['POST'])
 def upload_feed_image():
     from models import db, FeedSchedule, Device

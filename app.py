@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from models import db, User, Device, FeedSchedule, DispenseLog
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
-from scheduler import start_scheduler
+# Note: scheduler.py is not used - app manages its own scheduler dynamically
 from datetime import datetime, time, timedelta
 import os
 import requests
@@ -31,6 +33,13 @@ logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
 login_manager = LoginManager()
 
+# Initialize rate limiter (will be configured with app later)
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     
@@ -55,6 +64,7 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'login'
+    limiter.init_app(app)
 
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
@@ -63,6 +73,10 @@ def create_app():
     # Move this import here to avoid circular import
     from routes.api import api_bp
     app.register_blueprint(api_bp)
+    
+    # Apply rate limits to API blueprint routes
+    limiter.limit("30 per minute")(app.view_functions['api.upload_feed_image'])
+    limiter.limit("30 per minute")(app.view_functions['api.count_pellets'])
 
     # Register blueprints
     from routes.admin import admin_bp
@@ -341,6 +355,7 @@ def admin_user_dashboard():
     return render_template('admin/users.html', users=users)
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     if request.method == 'POST':
         username = request.form['username']
@@ -382,6 +397,8 @@ def profile():
         
         # Handle password change
         if new_password or current_password or confirm_password:
+            from utils.validators import validate_password
+            
             # Password change requested
             if not current_password:
                 flash('Current password required to change password.', 'danger')
@@ -391,8 +408,10 @@ def profile():
                 flash('Current password is incorrect.', 'danger')
                 return redirect(url_for('profile'))
             
-            if len(new_password) < 6:
-                flash('New password must be at least 6 characters long.', 'danger')
+            # Use the same password validation as registration
+            is_valid, error_msg = validate_password(new_password)
+            if not is_valid:
+                flash(error_msg, 'danger')
                 return redirect(url_for('profile'))
             
             if new_password != confirm_password:
@@ -414,6 +433,7 @@ def profile():
     return render_template('profile.html', user=current_user)
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", methods=["POST"])
 def register():
     """
     Public registration: create a new user account.
@@ -586,6 +606,7 @@ def register_device():
 
 # IoT Device API Endpoints
 @app.route('/iot/authenticate', methods=['POST'])
+@limiter.limit("10 per minute")
 def iot_authenticate():
     """
     IoT device authentication endpoint.
@@ -617,6 +638,7 @@ def iot_authenticate():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/iot/dispense', methods=['POST'])
+@limiter.limit("20 per minute")
 def iot_dispense():
     """
     IoT device dispense endpoint.
@@ -883,8 +905,8 @@ def delete_schedule(schedule_id):
     # Remove from scheduler
     try:
         scheduler.remove_job(f'schedule_{schedule_id}')
-    except:
-        pass
+    except Exception:
+        pass  # Job may not exist in scheduler
     
     db.session.delete(schedule)
     db.session.commit()
@@ -916,13 +938,14 @@ def toggle_schedule(schedule_id):
     else:
         try:
             scheduler.remove_job(f'schedule_{schedule_id}')
-        except:
-            pass
+        except Exception:
+            pass  # Job may not exist in scheduler
     
     return jsonify({'success': True, 'is_active': schedule.is_active})
 
 @app.route('/dispense', methods=['POST'])
 @login_required
+@limiter.limit("20 per minute")
 def manual_dispense():
     """
     API endpoint for manual feed dispensing
@@ -931,9 +954,9 @@ def manual_dispense():
     data = request.get_json()
     amount_grams = data.get('amount', 0)
     
-    # --- Limit: 20-150 grams per feeding ---
-    if amount_grams < 20 or amount_grams > 150:
-        return jsonify({'error': 'Invalid amount. Must be between 20 and 150 grams (for 1-5 chickens, 20-30g each)'}), 400
+    # --- Limit: 5-150 grams per feeding ---
+    if amount_grams < 5 or amount_grams > 150:
+        return jsonify({'error': 'Invalid amount. Must be between 5 and 150 grams'}), 400
     
     success, error_message, log_id = dispense_feed(
         amount_grams=amount_grams,
@@ -1039,21 +1062,10 @@ def setup_scheduled_jobs():
             replace_existing=True
         )
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config.json')
-
-def get_feed_ratio():
-    if not os.path.exists(CONFIG_PATH):
-        return {'pellets': 50, 'grams': 10}
-    with open(CONFIG_PATH, 'r') as f:
-        return json.load(f)
-
-def set_feed_ratio(pellets, grams):
-    with open(CONFIG_PATH, 'w') as f:
-        json.dump({'pellets': pellets, 'grams': grams}, f)
-
 @app.route('/admin/feed-ratio', methods=['GET', 'POST'])
 @login_required
 def admin_feed_ratio():
+    from utils.model_utils import get_feed_ratio, set_feed_ratio
     if not require_admin():
         return redirect(url_for('dashboard'))
     ratio = get_feed_ratio()
@@ -1077,11 +1089,13 @@ if __name__ == '__main__':
         create_admin_user()
         setup_scheduled_jobs()
     
-    # Run without debug mode to avoid verbose reloader logs
+    # Run with debug mode controlled by environment variable
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     print("\n" + "=" * 70)
     print("CHICKEN FEEDER - Main Flask Server")
     print("=" * 70)
     print("Server running on http://0.0.0.0:5000")
     print("Access at: http://localhost:5000")
+    print(f"Debug mode: {'ENABLED' if debug_mode else 'DISABLED'}")
     print("=" * 70 + "\n")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)

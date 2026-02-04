@@ -19,16 +19,14 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Note: Feed ratio config is handled by /admin/feed-ratio route in app.py
+# This route redirects to maintain backward compatibility
 @admin_bp.route('/config', methods=['GET', 'POST'])
+@login_required
+@admin_required
 def config():
-    if request.method == 'POST':
-        pellets = int(request.form.get('pellets', 50))
-        grams = float(request.form.get('grams', 10))
-        set_feed_ratio(pellets, grams)
-        flash('Feed ratio updated!', 'success')
-        return redirect(url_for('admin.config'))
-    ratio = get_feed_ratio()
-    return render_template('admin_config.html', ratio=ratio)
+    # Redirect to the main feed-ratio page in app.py
+    return redirect(url_for('admin_feed_ratio'))
 
 @admin_bp.route('/dashboard')
 @admin_required
@@ -206,7 +204,7 @@ def generate_report():
                 device.device_id,
                 device.user_id,
                 username,
-                device.token[:20] + '...' if len(device.token) > 20 else device.token,
+                '[REDACTED]',  # Token hidden for security
                 device.created_at.strftime('%Y-%m-%d %H:%M:%S')
             ])
         writer.writerow([])
@@ -260,8 +258,5 @@ def generate_report():
         headers={'Content-Disposition': f'attachment; filename={filename}'}
     )
 
-@admin_bp.route('/users')
-@admin_required
-def users():
-    users = User.query.all()
-    return render_template('admin/users.html', users=users)
+# Note: /admin/users route is defined in app.py as admin_user_dashboard
+# to maintain consistency with the user management flow

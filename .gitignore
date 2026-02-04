@@ -1,1 +1,45 @@
+# Environment variables
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+instance/
+*.sqlite
+*.db
+
+# Test files (keep for development but exclude from production)
+test.jpg
+test_*.py
+!test.py  # Keep the main test.py for ML testing
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Credentials (never commit)
+credentials.json
+*.pem
+*.key

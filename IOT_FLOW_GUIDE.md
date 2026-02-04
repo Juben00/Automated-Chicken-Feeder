@@ -31,7 +31,7 @@ Dashboard Updates with New Log Entry
 - Enter:
   - **Name**: e.g., "Morning Feed"
   - **Time**: e.g., 06:30 (24-hour format)
-  - **Amount**: 20-150 grams
+  - **Amount**: 5-150 grams
 - Click "Add Schedule"
 
 ### 2. **Flask Server Schedules the Task**

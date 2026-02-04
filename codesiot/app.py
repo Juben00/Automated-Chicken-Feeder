@@ -26,6 +26,8 @@ def servo_route():
 @app.route('/capture_image', methods=['POST'])
 def capture_route():
     image_path = capture_image()
+    if image_path is None:
+        return jsonify({"status": "error", "message": "Failed to capture image"}), 500
     return jsonify({"status": "success", "image_path": image_path})
 
 
@@ -38,6 +40,14 @@ def feed_cycle():
     schedule_id = req.get('schedule_id')
 
     image_path = capture_image()
+    
+    # Handle camera capture failure
+    if image_path is None:
+        return jsonify({
+            "status": "error", 
+            "message": "Failed to capture image from camera. Check camera connection."
+        }), 500
+    
     with open(image_path, 'rb') as img:
         files = {'image': img}
         # forward device_id and optionally schedule_id so server can resolve the correct schedule

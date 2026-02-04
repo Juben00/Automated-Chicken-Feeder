@@ -93,8 +93,8 @@
                 <form id="manual-dispense-form">
                     <div class="mb-3">
                         <label for="amount" class="form-label">Amount (grams)</label>
-                        <input type="number" class="form-control" id="amount" min="20" max="150" value="30" required>
-                        <div class="form-text">Enter amount between 20-150 grams (for 1-5 chickens, 20-30g each)</div>
+                        <input type="number" class="form-control" id="amount" min="5" max="150" value="30" required>
+                        <div class="form-text">Enter amount between 5-150 grams</div>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg" id="dispense-btn">
@@ -275,9 +275,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         form.addEventListener('submit', function(e) {
             const amount = document.getElementById('amount').value;
-            if (amount < 20 || amount > 150) {
+            if (amount < 5 || amount > 150) {
                 e.preventDefault();
-                alert('Amount must be between 20 and 150 grams (for 1-5 chickens, 20-30g each)');
+                alert('Amount must be between 5 and 150 grams');
                 return;
             }
         });
