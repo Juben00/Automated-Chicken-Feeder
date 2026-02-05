@@ -84,8 +84,10 @@ def feed_cycle():
                 # Only dispense if >= 5g
                 if grams_to_dispense >= 5:
                     # Each position (0° and 180°) drops 5g of feed
-                    # So one full cycle (0° -> 180°) dispenses 10g total
-                    num_drops = int(grams_to_dispense // 5)
+                    # Round UP to nearest 5g - always overfeed slightly rather than underfeed
+                    # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
+                    import math
+                    num_drops = math.ceil(grams_to_dispense / 5)
                     actual_dispensed = num_drops * 5
                     print(f"Dispensing {actual_dispensed} grams in {num_drops} drops...")
                     
@@ -143,7 +145,10 @@ def dispense_route():
             return jsonify({'error': 'Amount must be between 5 and 150 grams'}), 400
 
         # Each position (0° and 180°) drops 5g of feed
-        num_drops = amount // 5
+        # Round UP to nearest 5g - always overfeed slightly rather than underfeed
+        # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
+        import math
+        num_drops = math.ceil(amount / 5)
         actual_dispensed = num_drops * 5
         
         # Start servo in background thread so we can respond immediately
