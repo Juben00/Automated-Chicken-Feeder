@@ -29,6 +29,7 @@ def config():
     return redirect(url_for('admin_feed_ratio'))
 
 @admin_bp.route('/dashboard')
+@login_required
 @admin_required
 def dashboard():
     users = User.query.all()
@@ -87,6 +88,7 @@ def dashboard():
     )
 
 @admin_bp.route('/generate_report')
+@login_required
 @admin_required
 def generate_report():
     report_type = request.args.get('type', 'all')
