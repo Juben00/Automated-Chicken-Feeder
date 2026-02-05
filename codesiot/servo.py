@@ -27,19 +27,19 @@ def activate_servo(position=None):
         if position == 0:
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees
             print("Servo at 0° (feed dispensed)")
-            time.sleep(0.3)  # Wait for feed to drop
+            time.sleep(2)  # Wait for servo to fully reach position and feed to drop
         elif position == 180:
             pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees
             print("Servo at 180° (feed dispensed)")
-            time.sleep(0.3)  # Wait for feed to drop
+            time.sleep(2)  # Wait for servo to fully reach position and feed to drop
         else:
             # Default: cycle from 0° to 180° (dispenses at each position)
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees - dispense
             print("Servo at 0° (feed dispensed)")
-            time.sleep(0.3)
+            time.sleep(2)  # Wait for servo to fully reach position
             pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees - dispense
             print("Servo at 180° (feed dispensed)")
-            time.sleep(0.3)
+            time.sleep(2)  # Wait for servo to fully reach position
     except Exception as e:
         print(f"Servo error: {e}")
 
