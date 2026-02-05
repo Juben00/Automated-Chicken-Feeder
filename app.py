@@ -693,9 +693,9 @@ def iot_dispense():
         if schedule:
             scheduled_grams = schedule.amount_grams
             remaining_grams = max(0, scheduled_grams - amount_grams)
-            # Update the schedule with remaining amount
-            schedule.amount_grams = remaining_grams
-            db.session.commit()
+            # NOTE: Do NOT modify schedule.amount_grams - the schedule should keep its
+            # original amount for recurring daily feeds. The remaining_grams is just
+            # informational for this single feed session.
         
         # Log the dispense action
         log_entry = DispenseLog(

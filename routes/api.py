@@ -147,8 +147,9 @@ def upload_feed_image():
             grams_to_dispense = max(0, round(scheduled_grams - grams_present, 2))
             remaining_grams = max(0, round(scheduled_grams - grams_to_dispense, 2))
             logger.info(f"upload_feed_image: schedule_id={schedule.id} scheduled_grams={scheduled_grams} pellet_count={pellet_count} grams_present={grams_present} grams_to_dispense={grams_to_dispense} remaining_grams={remaining_grams}")
-            schedule.amount_grams = remaining_grams
-            db.session.commit()
+            # NOTE: Do NOT modify schedule.amount_grams - the schedule should keep its
+            # original amount for recurring daily feeds. The remaining_grams is just
+            # informational for this single feed session.
         else:
             # No schedule found at all, log and return error
             schedule_lookup_log.append(f"No valid schedule found for user {user.id}. Returning error.")
