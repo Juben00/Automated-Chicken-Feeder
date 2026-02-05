@@ -13,4 +13,4 @@ torch
 numpy
 pillow
 torchvision
-# RPi.GPIO  # Uncomment if running on Raspberry Pi hardware
+# pigpio  # Uncomment if running on Raspberry Pi hardware (requires pigpiod daemon)
