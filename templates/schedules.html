@@ -65,13 +65,11 @@
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-primary" 
-                                            onclick="testSchedule(this)"
-                                            data-id="{{ schedule.id }}"
-                                            data-amount_grams="{{ schedule.amount_grams }}"
-                                            title="Test this schedule">
-                                        <i class="fas fa-play"></i>
-                                    </button>
+                                    <a class="btn btn-outline-primary" 
+                                       href="{{ url_for('edit_schedule', schedule_id=schedule.id) }}"
+                                       title="Edit this schedule">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
                                     <button class="btn btn-outline-danger" 
                                             onclick="deleteSchedule(this)"
                                             data-id="{{ schedule.id }}"
@@ -110,7 +108,7 @@
                     <ul class="mb-0">
                         <li>Schedules run automatically every day at the specified time</li>
                         <li>You can temporarily disable schedules using the toggle switch</li>
-                        <li>Use the test button to immediately dispense feed for testing</li>
+                        <li>Click the edit button to modify schedule details</li>
                         <li>All dispense actions are logged for tracking</li>
                     </ul>
                 </div>
@@ -162,21 +160,6 @@ function toggleSchedule(toggleElement) {
         toggleElement.checked = !toggleElement.checked;
         showAlert('Error updating schedule', 'danger');
     });
-}
-
-function testSchedule(buttonElement) {
-    const scheduleId = buttonElement.getAttribute('data-id');
-    const amount = buttonElement.getAttribute('data-amount_grams');
-    if (!confirm(`Test dispense ${amount}g of feed now?`)) {
-        return;
-    }
-    
-    // Fix: dispenseNow is not defined in this file, ensure it exists globally
-    if (typeof dispenseNow === "function") {
-        dispenseNow(amount, `Testing schedule #${scheduleId}`);
-    } else {
-        showAlert('dispenseNow function not found.', 'danger');
-    }
 }
 
 function deleteSchedule(buttonElement) {

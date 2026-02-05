@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Add Schedule - Chicken Feed Management{% endblock %}
+{% block title %}Edit Schedule - Chicken Feed Management{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
     <div class="row mb-4">
         <div class="col">
             <h1 class="h2">
-                <i class="fas fa-plus me-2"></i>Add Feed Schedule
+                <i class="fas fa-edit me-2"></i>Edit Feed Schedule
             </h1>
         </div>
     </div>
@@ -20,13 +20,15 @@
                         <div class="mb-3">
                             <label for="name" class="form-label">Schedule Name</label>
                             <input type="text" class="form-control" id="name" name="name" 
+                                value="{{ schedule.name }}"
                                 placeholder="e.g., Morning Feed, Evening Feed" required>
                             <div class="form-text">Give your schedule a descriptive name</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="feed_time" class="form-label">Feed Time</label>
-                            <input type="time" class="form-control" id="feed_time" name="feed_time" required>
+                            <input type="time" class="form-control" id="feed_time" name="feed_time" 
+                                value="{{ schedule.feed_time.strftime('%H:%M') }}" required>
                             <div class="form-text">Time when feed should be dispensed daily</div>
                         </div>
                         
@@ -34,7 +36,7 @@
                             <label for="amount_grams" class="form-label">Amount (grams)</label>
                             <div class="input-group">
                                 <input type="number" class="form-control" id="amount_grams" name="amount_grams" 
-                                    min="5" max="150" value="30" required>
+                                    min="5" max="150" value="{{ schedule.amount_grams }}" required>
                                 <span class="input-group-text">grams</span>
                             </div>
                             <div class="form-text">
@@ -44,17 +46,18 @@
                         
                         <div class="mb-4">
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="is_active" checked>
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                    {% if schedule.is_active %}checked{% endif %}>
                                 <label class="form-check-label" for="is_active">
-                                    <strong>Activate schedule immediately</strong>
+                                    <strong>Schedule is active</strong>
                                 </label>
-                                <div class="form-text">Uncheck to create an inactive schedule</div>
+                                <div class="form-text">Uncheck to temporarily disable this schedule</div>
                             </div>
                         </div>
                         
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save me-1"></i>Create Schedule
+                                <i class="fas fa-save me-1"></i>Save Changes
                             </button>
                             <a href="{{ url_for('schedules') }}" class="btn btn-outline-secondary">
                                 <i class="fas fa-times me-1"></i>Cancel
@@ -77,80 +80,54 @@
                     <div class="d-flex align-items-center mb-3">
                         <i class="fas fa-clock fa-2x text-primary me-3"></i>
                         <div>
-                            <h5 class="mb-0" id="preview-name">Schedule Name</h5>
-                            <small class="text-muted" id="preview-time">--:--</small>
+                            <h5 class="mb-0" id="preview-name">{{ schedule.name }}</h5>
+                            <small class="text-muted" id="preview-time">{{ schedule.feed_time.strftime('%H:%M') }}</small>
                         </div>
                     </div>
                     
                     <div class="d-flex justify-content-between align-items-center">
                         <span>Amount:</span>
-                        <span class="badge bg-primary" id="preview-amount">-- grams</span>
+                        <span class="badge bg-primary" id="preview-amount">{{ schedule.amount_grams }} grams</span>
                     </div>
                     
                     <hr>
                     
                     <div class="d-flex justify-content-between align-items-center">
                         <span>Status:</span>
-                        <span class="badge bg-success" id="preview-status">Active</span>
+                        <span class="badge {{ 'bg-success' if schedule.is_active else 'bg-secondary' }}" id="preview-status">
+                            {{ 'Active' if schedule.is_active else 'Inactive' }}
+                        </span>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Created:</span>
+                        <small class="text-muted">{{ schedule.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
                     </div>
                 </div>
             </div>
             
-            <!-- Tips Card -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h6 class="card-title mb-0">
-                        <i class="fas fa-lightbulb me-2"></i>Feeding Tips
-                    </h6>
-                </div>
+            <!-- Schedule Info -->
+            <div class="card mt-3 bg-light">
                 <div class="card-body">
-                    <ul class="list-unstyled mb-0">
+                    <h6 class="card-title">
+                        <i class="fas fa-info-circle me-2"></i>Edit Information
+                    </h6>
+                    <ul class="list-unstyled mb-0 small">
                         <li class="mb-2">
                             <i class="fas fa-check text-success me-2"></i>
-                            <small>Feed chickens 2-3 times daily</small>
+                            Changes take effect immediately
                         </li>
                         <li class="mb-2">
                             <i class="fas fa-check text-success me-2"></i>
-                            <small>Typical serving: 20-30g per chicken</small>
-                        </li>
-                        <li class="mb-2">
-                            <i class="fas fa-check text-success me-2"></i>
-                            <small>Morning feeds should be larger</small>
+                            The scheduler will use the new time
                         </li>
                         <li class="mb-0">
                             <i class="fas fa-check text-success me-2"></i>
-                            <small>Consistent timing improves health</small>
+                            Toggle active status to pause/resume
                         </li>
                     </ul>
-                </div>
-            </div>
-            
-            <!-- Common Schedules -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h6 class="card-title mb-0">
-                        <i class="fas fa-star me-2"></i>Quick Templates
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-outline-primary btn-sm" 
-                                onclick="applyTemplate('Morning Feed (5 chickens)', '07:00', 120)">
-                            Morning (7:00 AM - 120g, 5 chickens)
-                        </button>
-                        <button class="btn btn-outline-primary btn-sm" 
-                                onclick="applyTemplate('Afternoon Feed (5 chickens)', '14:00', 100)">
-                            Afternoon (2:00 PM - 100g, 5 chickens)
-                        </button>
-                        <button class="btn btn-outline-primary btn-sm" 
-                                onclick="applyTemplate('Evening Feed (5 chickens)', '18:30', 130)">
-                            Evening (6:30 PM - 130g, 5 chickens)
-                        </button>
-                        <button class="btn btn-outline-primary btn-sm" 
-                                onclick="applyTemplate('Full Feeder (5 chickens)', '12:00', 150)">
-                            Full Feeder (12:00 PM - 150g, 5 chickens)
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -180,17 +157,6 @@ document.addEventListener('DOMContentLoaded', function() {
     amountInput.addEventListener('input', updatePreview);
     activeInput.addEventListener('change', updatePreview);
 });
-
-function applyTemplate(name, time, amount) {
-    document.getElementById('name').value = name;
-    document.getElementById('feed_time').value = time;
-    document.getElementById('amount_grams').value = amount;
-    
-    // Trigger preview update
-    document.getElementById('name').dispatchEvent(new Event('input'));
-    document.getElementById('feed_time').dispatchEvent(new Event('change'));
-    document.getElementById('amount_grams').dispatchEvent(new Event('input'));
-}
 
 // Form validation
 document.getElementById('schedule-form').addEventListener('submit', function(e) {

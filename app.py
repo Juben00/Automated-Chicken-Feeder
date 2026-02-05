@@ -886,6 +886,90 @@ def add_schedule():
     
     return render_template('add_schedule.html')
 
+@app.route('/schedules/<int:schedule_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_schedule(schedule_id):
+    from utils.validators import validate_schedule_name, validate_amount_grams, sanitize_string
+    
+    schedule = db.session.get(FeedSchedule, schedule_id)
+    if not schedule:
+        flash('Schedule not found', 'danger')
+        return redirect(url_for('schedules'))
+    if schedule.created_by != current_user.id:
+        flash('Unauthorized', 'danger')
+        return redirect(url_for('schedules'))
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        feed_time_str = request.form.get('feed_time', '')
+        is_active = 'is_active' in request.form
+        
+        # Validate and sanitize schedule name
+        is_valid, error_msg = validate_schedule_name(name)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('edit_schedule', schedule_id=schedule_id))
+        name = sanitize_string(name, max_length=100)
+        
+        # Validate amount
+        try:
+            amount_grams = int(request.form.get('amount_grams', 0))
+        except ValueError:
+            flash('Amount must be a valid number.', 'danger')
+            return redirect(url_for('edit_schedule', schedule_id=schedule_id))
+        
+        is_valid, error_msg = validate_amount_grams(amount_grams)
+        if not is_valid:
+            flash(error_msg, 'danger')
+            return redirect(url_for('edit_schedule', schedule_id=schedule_id))
+        
+        # Validate time format
+        try:
+            feed_time = datetime.strptime(feed_time_str, '%H:%M').time()
+        except ValueError:
+            flash('Invalid time format. Please use HH:MM format.', 'danger')
+            return redirect(url_for('edit_schedule', schedule_id=schedule_id))
+        
+        # Check if time changed
+        time_changed = schedule.feed_time != feed_time
+        was_active = schedule.is_active
+        
+        # Update schedule
+        schedule.name = name
+        schedule.feed_time = feed_time
+        schedule.amount_grams = amount_grams
+        schedule.is_active = is_active
+        
+        db.session.commit()
+        
+        # Update scheduler if time changed or active status changed
+        try:
+            # Remove old job
+            try:
+                scheduler.remove_job(f'schedule_{schedule_id}')
+            except Exception:
+                pass  # Job may not exist
+            
+            # Add new job if active
+            if is_active:
+                scheduler.add_job(
+                    func=scheduled_feed_task,
+                    trigger=CronTrigger(hour=feed_time.hour, minute=feed_time.minute),
+                    args=[schedule.id],
+                    id=f'schedule_{schedule.id}',
+                    replace_existing=True
+                )
+                logger.info(f"Updated schedule {schedule.id} in scheduler for {feed_time}")
+        except Exception as e:
+            logger.error(f"Error updating job in scheduler: {str(e)}")
+            flash('Schedule updated but failed to update scheduler. Please restart the app.', 'warning')
+            return redirect(url_for('schedules'))
+        
+        flash('Schedule updated successfully!', 'success')
+        return redirect(url_for('schedules'))
+    
+    return render_template('edit_schedule.html', schedule=schedule)
+
 @app.route('/schedules/<int:schedule_id>/delete', methods=['POST'])
 @login_required
 def delete_schedule(schedule_id):
