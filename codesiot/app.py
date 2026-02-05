@@ -6,6 +6,27 @@ import time
 
 app = Flask(__name__)
 
+# Track servo position to ensure every drop command results in actual movement
+# This persists across requests so we always know where the servo is
+SERVO_STATE_FILE = "/tmp/servo_position.txt"
+
+def get_servo_position():
+    """Get last known servo position (0 or 180). Defaults to 0."""
+    try:
+        with open(SERVO_STATE_FILE, 'r') as f:
+            pos = int(f.read().strip())
+            return pos if pos in [0, 180] else 0
+    except:
+        return 0  # Default: assume at 0
+
+def set_servo_position(position):
+    """Save current servo position to state file."""
+    try:
+        with open(SERVO_STATE_FILE, 'w') as f:
+            f.write(str(position))
+    except Exception as e:
+        print(f"Warning: Could not save servo position: {e}")
+
 # Load configuration
 with open("config.json") as f:
     config = json.load(f)
@@ -67,14 +88,31 @@ def feed_cycle():
                     num_drops = int(grams_to_dispense // 5)
                     actual_dispensed = num_drops * 5
                     print(f"Dispensing {actual_dispensed} grams in {num_drops} drops...")
-                    current_position = 180  # Start position
-                    for i in range(num_drops):
-                        # Alternate between 0° and 180°, each drop dispenses 5g
-                        next_position = 0 if current_position == 180 else 180
-                        print(f"Drop {i+1}: Rotating servo to {next_position}° (dispensing 5g)")
-                        activate_servo(position=next_position)
-                        time.sleep(0.5)
-                        current_position = next_position
+                    
+                    # Run servo in background thread to respond quickly
+                    import threading
+                    def run_servo_cycle():
+                        try:
+                            # Get last known position so every command results in actual movement
+                            current_position = get_servo_position()
+                            print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
+                            
+                            for i in range(num_drops):
+                                # Alternate between 0° and 180°, each drop dispenses 5g
+                                next_position = 0 if current_position == 180 else 180
+                                print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing 5g)")
+                                activate_servo(position=next_position)
+                                time.sleep(0.5)
+                                current_position = next_position
+                                set_servo_position(current_position)  # Save position after each move
+                            print(f"Feed cycle complete: dispensed {actual_dispensed}g")
+                        except Exception as e:
+                            print(f"Servo thread error: {e}")
+                    
+                    thread = threading.Thread(target=run_servo_cycle, daemon=True)
+                    thread.start()
+                    
+                    # Return immediately (don't wait for servo to finish)
                     return jsonify({"status": "success", "dispensed": actual_dispensed, "response": result})
                 else:
                     print("Requested amount less than 5g. No dispensing.")
@@ -112,12 +150,18 @@ def dispense_route():
         import threading
         def run_servo():
             try:
-                current_position = 180  # Start position
+                # Get last known position so every command results in actual movement
+                current_position = get_servo_position()
+                print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
+                
                 for i in range(num_drops):
                     # Alternate between 0° and 180°, each drop dispenses 5g
                     next_position = 0 if current_position == 180 else 180
+                    print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}°")
                     activate_servo(position=next_position)
                     current_position = next_position
+                    set_servo_position(current_position)  # Save position after each move
+                print(f"Dispensing complete: {actual_dispensed}g in {num_drops} drops")
             except Exception as e:
                 print(f"Servo thread error: {e}")
         

@@ -103,11 +103,6 @@ def load_user(user_id):
 # Initialize scheduler for automated feeding
 scheduler = BackgroundScheduler()
 
-def start_scheduler_once():
-    if not scheduler.running:
-        scheduler.start()
-
-
 @app.context_processor
 def inject_datetime():
     return {'datetime': datetime}
@@ -1083,11 +1078,24 @@ def admin_feed_ratio():
             flash('Invalid input.', 'danger')
     return render_template('admin/feed_ratio.html', ratio=ratio)
 
-if __name__ == '__main__':
+def initialize_app():
+    """Initialize database, admin user, and scheduler - called on startup"""
     with app.app_context():
         db.create_all()
         create_admin_user()
         setup_scheduled_jobs()
+    
+    # Start the scheduler
+    if not scheduler.running:
+        scheduler.start()
+        logger.info("Scheduler started successfully")
+    
+    # Register shutdown handler
+    atexit.register(lambda: scheduler.shutdown(wait=False))
+
+
+if __name__ == '__main__':
+    initialize_app()
     
     # Run with debug mode controlled by environment variable
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
@@ -1097,5 +1105,9 @@ if __name__ == '__main__':
     print("Server running on http://0.0.0.0:5000")
     print("Access at: http://localhost:5000")
     print(f"Debug mode: {'ENABLED' if debug_mode else 'DISABLED'}")
+    print(f"Scheduler: RUNNING with {len(scheduler.get_jobs())} scheduled jobs")
     print("=" * 70 + "\n")
     app.run(host="0.0.0.0", port=5000, debug=debug_mode)
+else:
+    # When imported via WSGI (e.g., gunicorn), also initialize
+    initialize_app()
