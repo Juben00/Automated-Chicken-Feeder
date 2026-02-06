@@ -63,6 +63,9 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showToken(this)" data-index="{{loop.index}}" data-token="{{device.token}}" title="Show/Hide Token">
                                     <i class="fas fa-eye"></i>
                                 </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="copyToken('{{device.token}}')" title="Copy Token">
+                                    <i class="fas fa-copy"></i>
+                                </button>
                                 <form method="POST" style="display:inline;" class="delete-device-form">
                                     <input type="hidden" name="delete_device" value="{{ device.device_id }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Device">
@@ -100,6 +103,27 @@
             el.querySelector('i').classList.remove('fa-eye-slash');
             el.querySelector('i').classList.add('fa-eye');
         }
+    }
+
+    function copyToken(token) {
+        navigator.clipboard.writeText(token).then(function() {
+            Swal.fire({
+                icon: 'success',
+                title: 'Copied!',
+                text: 'Token copied to clipboard',
+                confirmButtonColor: '#2357d5',
+                timer: 2000,
+                timerProgressBar: true,
+                showConfirmButton: false
+            });
+        }).catch(function(err) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Failed',
+                text: 'Could not copy token to clipboard',
+                confirmButtonColor: '#2357d5'
+            });
+        });
     }
 
     // SweetAlert confirmation for device deletion
