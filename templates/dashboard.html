@@ -227,11 +227,13 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td style="max-width: 300px;">
                                     {% if log.schedule %}
                                         {{ log.schedule.name }}
                                     {% elif log.error_message %}
-                                        <small class="text-danger">{{ log.error_message[:50] }}...</small>
+                                        <small class="text-danger" title="{{ log.error_message }}" style="cursor: help;">
+                                            {{ log.error_message[:100] }}{% if log.error_message|length > 100 %}...{% endif %}
+                                        </small>
                                     {% else %}
                                         -
                                     {% endif %}
@@ -277,7 +279,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const amount = document.getElementById('amount').value;
             if (amount < 5 || amount > 150) {
                 e.preventDefault();
-                alert('Amount must be between 5 and 150 grams');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Invalid Amount',
+                    text: 'Amount must be between 5 and 150 grams',
+                    confirmButtonColor: '#2357d5'
+                });
                 return;
             }
         });

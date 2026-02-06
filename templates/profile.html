@@ -74,12 +74,12 @@
                         </div>
 
                         {% if user.iot_device_url %}
-                        <div class="alert alert-info" role="alert">
+                        <div class="bg-info bg-opacity-10 text-info border border-info rounded p-3" role="alert">
                             <i class="fas fa-info-circle me-2"></i>
                             <strong>Current Device:</strong> {{ user.iot_device_url }}
                         </div>
                         {% else %}
-                        <div class="alert alert-warning" role="alert">
+                        <div class="bg-warning bg-opacity-10 text-warning border border-warning rounded p-3" role="alert">
                             <i class="fas fa-exclamation-triangle me-2"></i>
                             <strong>No device configured.</strong> Scheduled feeds will fail without an IoT device URL.
                         </div>
@@ -135,7 +135,7 @@
                     </div>
 
                     {% if user.iot_device_url %}
-                    <div class="alert alert-success" role="alert">
+                    <div class="bg-success bg-opacity-10 text-success border border-success rounded p-3" role="alert">
                         <i class="fas fa-check-circle me-2"></i>
                         <strong>Device Configured!</strong><br>
                         Your schedules will automatically dispense feed to: <code>{{ user.iot_device_url }}</code>

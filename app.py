@@ -1062,11 +1062,11 @@ def logs():
 
     if not current_user.is_admin:
         logs = DispenseLog.query.filter_by(triggered_by=current_user.id).order_by(DispenseLog.timestamp.desc()).paginate(
-            page=page, per_page=50, error_out=False
+            page=page, per_page=10, error_out=False
         )
     else:
         logs = DispenseLog.query.order_by(DispenseLog.timestamp.desc()).paginate(
-            page=page, per_page=50, error_out=False
+            page=page, per_page=10, error_out=False
         )
     return render_template('logs.html', logs=logs)
 

@@ -165,42 +165,43 @@ function toggleSchedule(toggleElement) {
 function deleteSchedule(buttonElement) {
     const scheduleId = buttonElement.getAttribute('data-id');
     const scheduleName = buttonElement.getAttribute('data-name');
-    if (!confirm(`Delete schedule "${scheduleName}"? This cannot be undone.`)) {
-        return;
-    }
     
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = `/schedules/${scheduleId}/delete`;
-    document.body.appendChild(form);
-    form.submit();
+    Swal.fire({
+        title: 'Delete Schedule?',
+        text: `Are you sure you want to delete "${scheduleName}"? This cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/schedules/${scheduleId}/delete`;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
 }
 
 function showAlert(message, type) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = 'top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 600px;';
-    
     const iconMap = {
-        'success': 'check-circle',
-        'danger': 'exclamation-triangle',
-        'warning': 'exclamation-triangle',
-        'info': 'info-circle'
+        'success': 'success',
+        'danger': 'error',
+        'warning': 'warning',
+        'info': 'info'
     };
     
-    alertDiv.innerHTML = `
-        <i class="fas fa-${iconMap[type] || 'info-circle'} me-2"></i>
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    setTimeout(() => {
-        if (alertDiv.parentNode) {
-            alertDiv.remove();
-        }
-    }, 5000);
+    Swal.fire({
+        icon: iconMap[type] || 'info',
+        title: type === 'success' ? 'Success' : type === 'danger' ? 'Error' : type.charAt(0).toUpperCase() + type.slice(1),
+        text: message,
+        confirmButtonColor: '#2357d5',
+        timer: 3000,
+        timerProgressBar: true,
+        showConfirmButton: false
+    });
 }
 </script>
 {% endblock %}

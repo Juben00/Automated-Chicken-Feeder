@@ -163,14 +163,24 @@ document.getElementById('schedule-form').addEventListener('submit', function(e) 
     const amount = document.getElementById('amount_grams').value;
     if (amount < 5 || amount > 150) {
         e.preventDefault();
-        alert('Amount must be between 5 and 150 grams');
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Amount',
+            text: 'Amount must be between 5 and 150 grams',
+            confirmButtonColor: '#2357d5'
+        });
         return;
     }
     
     const time = document.getElementById('feed_time').value;
     if (!time) {
         e.preventDefault();
-        alert('Please select a feed time');
+        Swal.fire({
+            icon: 'error',
+            title: 'Missing Time',
+            text: 'Please select a feed time',
+            confirmButtonColor: '#2357d5'
+        });
         return;
     }
 });

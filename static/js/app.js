@@ -79,7 +79,7 @@ async function dispenseNow(amount, description = '') {
         if (statusDiv) {
             statusDiv.style.display = 'block';
             statusDiv.innerHTML = `
-                <div class="alert alert-info">
+                <div class="text-info p-3 rounded bg-light">
                     <i class="fas fa-spinner fa-spin me-2"></i>
                     Dispensing ${amount}g of feed...
                 </div>
@@ -102,7 +102,7 @@ async function dispenseNow(amount, description = '') {
             
             if (statusDiv) {
                 statusDiv.innerHTML = `
-                    <div class="alert alert-success">
+                    <div class="text-success p-3 rounded bg-light">
                         <i class="fas fa-check me-2"></i>
                         Successfully dispensed ${amount}g of feed!
                     </div>
@@ -117,7 +117,7 @@ async function dispenseNow(amount, description = '') {
             
             if (statusDiv) {
                 statusDiv.innerHTML = `
-                    <div class="alert alert-danger">
+                    <div class="text-danger p-3 rounded bg-light">
                         <i class="fas fa-times me-2"></i>
                         Dispense failed: ${data.error}
                     </div>
@@ -131,7 +131,7 @@ async function dispenseNow(amount, description = '') {
         
         if (statusDiv) {
             statusDiv.innerHTML = `
-                <div class="alert alert-danger">
+                <div class="text-danger p-3 rounded bg-light">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     Network error occurred. Please try again.
                 </div>
@@ -155,33 +155,31 @@ async function dispenseNow(amount, description = '') {
     }
 }
 
-// Show alert messages
+// Show alert messages using SweetAlert
 function showAlert(message, type = 'info', duration = 5000) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    alertDiv.style.cssText = 'top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 600px;';
-    
     const iconMap = {
-        'success': 'check-circle',
-        'danger': 'exclamation-triangle',
-        'warning': 'exclamation-triangle',
-        'info': 'info-circle'
+        'success': 'success',
+        'danger': 'error',
+        'warning': 'warning',
+        'info': 'info'
     };
     
-    alertDiv.innerHTML = `
-        <i class="fas fa-${iconMap[type] || 'info-circle'} me-2"></i>
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
+    const titleMap = {
+        'success': 'Success',
+        'danger': 'Error',
+        'warning': 'Warning',
+        'info': 'Info'
+    };
     
-    document.body.appendChild(alertDiv);
-    
-    // Auto-remove after duration
-    setTimeout(() => {
-        if (alertDiv.parentNode) {
-            alertDiv.remove();
-        }
-    }, duration);
+    Swal.fire({
+        icon: iconMap[type] || 'info',
+        title: titleMap[type] || 'Info',
+        text: message,
+        confirmButtonColor: '#2357d5',
+        timer: duration,
+        timerProgressBar: true,
+        showConfirmButton: false
+    });
 }
 
 // Refresh dashboard statistics

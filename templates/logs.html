@@ -167,14 +167,14 @@
                                     </span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td style="max-width: 350px;">
                                 {% if log.schedule %}
                                     <div>
                                         <strong>{{ log.schedule.name }}</strong>
                                     </div>
                                     <small class="text-muted">{{ log.schedule.feed_time.strftime('%I:%M %p') }}</small>
                                 {% elif log.error_message %}
-                                    <div class="text-danger">
+                                    <div class="text-danger" title="{{ log.error_message }}" style="cursor: help;">
                                         <i class="fas fa-exclamation-triangle me-1"></i>
                                         <small>{{ log.error_message[:100] }}{% if log.error_message|length > 100 %}...{% endif %}</small>
                                     </div>
