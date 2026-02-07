@@ -10,8 +10,8 @@ SERVO_MAX_PULSE = 2500  # 180 degrees (was duty cycle 12 at 50Hz = 2400µs)
 SERVO_OFF = 0           # Turn off servo signal
 
 # Speed control settings
-SERVO_STEP_SIZE = 2     # Degrees per step (smaller = smoother but slower)
-SERVO_STEP_DELAY = 0.01 # Seconds between each step (larger = slower rotation)
+SERVO_STEP_SIZE = 3     # Degrees per step (60 steps per rotation)
+SERVO_STEP_DELAY = 0.02 # Seconds between steps (~1.2s per full rotation)
 
 # Initialize pigpio
 pi = pigpio.pi()
