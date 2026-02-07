@@ -9,15 +9,49 @@ SERVO_MIN_PULSE = 500   # 0 degrees (was duty cycle 2 at 50Hz ≈ 400µs)
 SERVO_MAX_PULSE = 2500  # 180 degrees (was duty cycle 12 at 50Hz = 2400µs)
 SERVO_OFF = 0           # Turn off servo signal
 
+# Speed control settings
+SERVO_STEP_SIZE = 2     # Degrees per step (smaller = smoother but slower)
+SERVO_STEP_DELAY = 0.02 # Seconds between each step (larger = slower rotation)
+
 # Initialize pigpio
 pi = pigpio.pi()
 
 if not pi.connected:
     raise RuntimeError("Failed to connect to pigpio daemon. Make sure pigpiod is running.")
 
+def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
+    """
+    Gradually move the servo from one angle to another for slower, smoother rotation.
+    from_angle: starting angle (0-180)
+    to_angle: target angle (0-180)
+    step_size: degrees per step (default: SERVO_STEP_SIZE)
+    step_delay: seconds between steps (default: SERVO_STEP_DELAY)
+    """
+    if step_size is None:
+        step_size = SERVO_STEP_SIZE
+    if step_delay is None:
+        step_delay = SERVO_STEP_DELAY
+
+    # Determine direction
+    if from_angle < to_angle:
+        angles = range(from_angle, to_angle + 1, step_size)
+    else:
+        angles = range(from_angle, to_angle - 1, -step_size)
+
+    for angle in angles:
+        pulse_width = SERVO_MIN_PULSE + (angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+        pi.set_servo_pulsewidth(servo_pin, int(pulse_width))
+        time.sleep(step_delay)
+
+    # Ensure we land exactly on the target angle
+    final_pulse = SERVO_MIN_PULSE + (to_angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+    pi.set_servo_pulsewidth(servo_pin, int(final_pulse))
+    print(f"Servo slowly moved from {from_angle}° to {to_angle}°")
+
+
 def activate_servo(position=None):
     """
-    Activate servo motor using pigpio hardware PWM.
+    Activate servo motor using pigpio hardware PWM with slow rotation.
     Feed is dispensed at BOTH positions (0° and 180°).
     position=0: move to 0° (dispense feed) - pulse width 500µs
     position=180: move to 180° (dispense feed) - pulse width 2500µs
@@ -25,19 +59,19 @@ def activate_servo(position=None):
     """
     try:
         if position == 0:
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees
+            slow_move_servo(180, 0)
             print("Servo at 0° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
         elif position == 180:
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees
+            slow_move_servo(0, 180)
             print("Servo at 180° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
         else:
             # Default: cycle from 0° to 180° (dispenses at each position)
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees - dispense
+            slow_move_servo(180, 0)
             print("Servo at 0° (feed dispensed)")
             time.sleep(2)
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees - dispense
+            slow_move_servo(0, 180)
             print("Servo at 180° (feed dispensed)")
             time.sleep(2)
     except Exception as e:

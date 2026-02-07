@@ -3,6 +3,9 @@ from utils.model_utils import get_model, predict_pellets
 from utils.model_utils import get_feed_ratio
 from flask_login import current_user
 import datetime
+import os
+import uuid
+from werkzeug.utils import secure_filename
 from utils.logger import logger
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -78,6 +81,25 @@ def upload_feed_image():
             return jsonify({'error': 'Invalid device_id or token'}), 401
 
         user = device.user
+
+        # Save the uploaded image
+        upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'feed_images')
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        # Generate unique filename with timestamp
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"feed_{user.id}_{timestamp}_{unique_id}.jpg"
+        filepath = os.path.join(upload_folder, filename)
+        
+        # Save the image file
+        image.save(filepath)
+        # Store relative path for database
+        image_path = f"uploads/feed_images/{filename}"
+        logger.info(f"Saved feed image: {image_path}")
+        
+        # Reset file pointer for ML prediction
+        image.seek(0)
 
         model = get_model()
         pellet_count = predict_pellets(model, image)
@@ -166,10 +188,12 @@ def upload_feed_image():
         logger.info(f"upload_feed_image: {schedule_lookup_log}")
         return jsonify({
             'pellet_count': pellet_count,
+            'grams_detected': grams_present,  # Estimated grams of pellets in feeder
             'grams_to_dispense': grams_to_dispense,
             'scheduled_grams': scheduled_grams,
             'remaining_grams': remaining_grams,
-            'schedule_lookup_log': schedule_lookup_log
+            'schedule_lookup_log': schedule_lookup_log,
+            'image_path': image_path  # Return the saved image path
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

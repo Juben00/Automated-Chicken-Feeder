@@ -39,6 +39,10 @@ class DispenseLog(db.Model):
     schedule_id = db.Column(db.Integer, db.ForeignKey('feed_schedule.id'), nullable=True)
     status = db.Column(db.String(20), default='success')
     error_message = db.Column(db.Text, nullable=True)
+    image_path = db.Column(db.String(255), nullable=True)  # Path to captured feed image
+    pellet_count = db.Column(db.Integer, nullable=True)  # Number of pellets detected in image
+    grams_detected = db.Column(db.Float, nullable=True)  # Estimated grams of pellets in feeder
+    grams_dispensed = db.Column(db.Integer, nullable=True)  # Actual amount dispensed by servo
     triggered_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     schedule = db.relationship('FeedSchedule', backref=db.backref('dispense_logs', lazy=True))
     user = db.relationship('User', backref=db.backref('dispense_logs', lazy=True))

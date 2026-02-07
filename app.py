@@ -274,6 +274,14 @@ def scheduled_feed_task(schedule_id):
                         except Exception:
                             dispensed_val = 0
 
+                    # Get additional info from the server response (inside 'inner')
+                    image_path = inner.get('image_path') if isinstance(inner, dict) else None
+                    pellet_count = inner.get('pellet_count') if isinstance(inner, dict) else None
+                    grams_detected = inner.get('grams_detected') if isinstance(inner, dict) else None
+                    
+                    # The actual grams dispensed by servo (from IoT device response)
+                    grams_dispensed = result.get('dispensed') if isinstance(result, dict) else dispensed_val
+                    
                     # Log successful dispense
                     log_entry = DispenseLog(
                         amount_grams=dispensed_val,
@@ -281,6 +289,10 @@ def scheduled_feed_task(schedule_id):
                         schedule_id=schedule_id,
                         status='success',
                         error_message=None,
+                        image_path=image_path,
+                        pellet_count=pellet_count,
+                        grams_detected=grams_detected,
+                        grams_dispensed=grams_dispensed,
                         triggered_by=user.id
                     )
                 else:
