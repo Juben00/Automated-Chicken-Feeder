@@ -11,7 +11,7 @@ SERVO_OFF = 0           # Turn off servo signal
 
 # Speed control settings
 SERVO_STEP_SIZE = 2     # Degrees per step (smaller = smoother but slower)
-SERVO_STEP_DELAY = 0.02 # Seconds between each step (larger = slower rotation)
+SERVO_STEP_DELAY = 0.01 # Seconds between each step (larger = slower rotation)
 
 # Initialize pigpio
 pi = pigpio.pi()
