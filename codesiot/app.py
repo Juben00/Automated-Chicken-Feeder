@@ -11,13 +11,13 @@ app = Flask(__name__)
 SERVO_STATE_FILE = "/tmp/servo_position.txt"
 
 def get_servo_position():
-    """Get last known servo position (0 or 180). Defaults to 0."""
+    """Get last known servo position (0 or 90). Defaults to 90."""
     try:
         with open(SERVO_STATE_FILE, 'r') as f:
             pos = int(f.read().strip())
-            return pos if pos in [0, 180] else 0
+            return pos if pos in [0, 90] else 90
     except:
-        return 0  # Default: assume at 0
+        return 90  # Default: assume at 90
 
 def set_servo_position(position):
     """Save current servo position to state file."""
@@ -83,7 +83,7 @@ def feed_cycle():
                 grams_to_dispense = result.get('grams_to_dispense', 0)
                 # Only dispense if >= 5g
                 if grams_to_dispense >= 5:
-                    # Each position (0° and 180°) drops 5g of feed
+                    # Each position (0° and 90°) drops 5g of feed
                     # Round UP to nearest 5g - always overfeed slightly rather than underfeed
                     # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
                     import math
@@ -100,8 +100,8 @@ def feed_cycle():
                             print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
                             
                             for i in range(num_drops):
-                                # Alternate between 0° and 180°, each drop dispenses 5g
-                                next_position = 0 if current_position == 180 else 180
+                                # Alternate between 0° and 90°, each drop dispenses 5g
+                                next_position = 0 if current_position == 90 else 90
                                 print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing 5g)")
                                 activate_servo(position=next_position)
                                 time.sleep(0.5)
@@ -144,7 +144,7 @@ def dispense_route():
         if amount < 5 or amount > 150:
             return jsonify({'error': 'Amount must be between 5 and 150 grams'}), 400
 
-        # Each position (0° and 180°) drops 5g of feed
+        # Each position (0° and 90°) drops 5g of feed
         # Round UP to nearest 5g - always overfeed slightly rather than underfeed
         # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
         import math
@@ -160,8 +160,8 @@ def dispense_route():
                 print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
                 
                 for i in range(num_drops):
-                    # Alternate between 0° and 180°, each drop dispenses 5g
-                    next_position = 0 if current_position == 180 else 180
+                    # Alternate between 0° and 90°, each drop dispenses 5g
+                    next_position = 0 if current_position == 90 else 90
                     print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}°")
                     activate_servo(position=next_position)
                     current_position = next_position

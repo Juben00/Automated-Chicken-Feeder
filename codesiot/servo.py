@@ -52,27 +52,27 @@ def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
 def activate_servo(position=None):
     """
     Activate servo motor using pigpio hardware PWM with slow rotation.
-    Feed is dispensed at BOTH positions (0° and 180°).
-    position=0: move to 0° (dispense feed) - pulse width 500µs
-    position=180: move to 180° (dispense feed) - pulse width 2500µs
-    position=None: cycle between 0° and 180° (dispenses twice)
+    Feed is dispensed at BOTH positions (0° and 90°).
+    position=0: move to 0° (dispense feed)
+    position=90: move to 90° (dispense feed)
+    position=None: cycle 90° → 0° (delay 2s) → 0° → 90°
     """
     try:
         if position == 0:
-            slow_move_servo(180, 0)
+            slow_move_servo(90, 0)
             print("Servo at 0° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
-        elif position == 180:
-            slow_move_servo(0, 180)
-            print("Servo at 180° (feed dispensed)")
+        elif position == 90:
+            slow_move_servo(0, 90)
+            print("Servo at 90° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
         else:
-            # Default: cycle from 0° to 180° (dispenses at each position)
-            slow_move_servo(180, 0)
+            # Default: cycle 90° → 0°, wait 2s, then 0° → 90°
+            slow_move_servo(90, 0)
             print("Servo at 0° (feed dispensed)")
-            time.sleep(2)
-            slow_move_servo(0, 180)
-            print("Servo at 180° (feed dispensed)")
+            time.sleep(2)  # Wait for feed to drop
+            slow_move_servo(0, 90)
+            print("Servo at 90° (feed dispensed)")
             time.sleep(2)
     except Exception as e:
         print(f"Servo error: {e}")
