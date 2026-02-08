@@ -10,6 +10,7 @@ SERVO_MAX_PULSE = 2500  # 180 degrees (was duty cycle 12 at 50Hz = 2400µs)
 SERVO_OFF = 0           # Turn off servo signal
 
 # Speed control settings
+<<<<<<< HEAD
 SERVO_STEP_SIZE = 5     # Degrees per step (36 steps per full rotation)
 SERVO_STEP_DELAY = 0.005 # Base seconds between steps
 RAMP_DEGREES = 25       # Gentle ramp for first/last 25° to protect the rod
@@ -17,6 +18,10 @@ RAMP_DELAY = 0.025      # Slower delay during ramp (protects 3D printed rod)
 SHAKE_ANGLE = 10        # Degrees to shake back and forth after reaching target
 SHAKE_COUNT = 3         # Number of shakes to dislodge stuck feed
 SHAKE_DELAY = 0.04      # Delay between shake positions
+=======
+SERVO_STEP_SIZE = 3     # Degrees per step (60 steps per rotation)
+SERVO_STEP_DELAY = 0.02 # Seconds between steps (~1.2s per full rotation)
+>>>>>>> parent of 8c1ad6d (Enhance servo movement with easing function)
 
 # Initialize pigpio
 pi = pigpio.pi()
@@ -31,9 +36,17 @@ def _set_angle(angle):
 
 def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
     """
+<<<<<<< HEAD
     Move the servo with gentle ramp-up/ramp-down at the start/end to protect
     the 3D printed rod, and fast movement in the middle to dispense feed.
     Finishes with a shake to dislodge any stuck feed.
+=======
+    Gradually move the servo from one angle to another for slower, smoother rotation.
+    from_angle: starting angle (0-180)
+    to_angle: target angle (0-180)
+    step_size: degrees per step (default: SERVO_STEP_SIZE)
+    step_delay: seconds between steps (default: SERVO_STEP_DELAY)
+>>>>>>> parent of 8c1ad6d (Enhance servo movement with easing function)
     """
     if step_size is None:
         step_size = SERVO_STEP_SIZE
@@ -42,11 +55,12 @@ def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
 
     # Determine direction
     if from_angle < to_angle:
-        angles = list(range(from_angle, to_angle + 1, step_size))
+        angles = range(from_angle, to_angle + 1, step_size)
     else:
-        angles = list(range(from_angle, to_angle - 1, -step_size))
+        angles = range(from_angle, to_angle - 1, -step_size)
 
     for angle in angles:
+<<<<<<< HEAD
         _set_angle(angle)
 
         # Gentle ramp at start and end, fast in the middle
@@ -68,6 +82,16 @@ def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
         time.sleep(SHAKE_DELAY)
 
     print(f"Servo moved from {from_angle}° to {to_angle}° (with shake)")
+=======
+        pulse_width = SERVO_MIN_PULSE + (angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+        pi.set_servo_pulsewidth(servo_pin, int(pulse_width))
+        time.sleep(step_delay)
+
+    # Ensure we land exactly on the target angle
+    final_pulse = SERVO_MIN_PULSE + (to_angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
+    pi.set_servo_pulsewidth(servo_pin, int(final_pulse))
+    print(f"Servo slowly moved from {from_angle}° to {to_angle}°")
+>>>>>>> parent of 8c1ad6d (Enhance servo movement with easing function)
 
 
 def activate_servo(position=None):
