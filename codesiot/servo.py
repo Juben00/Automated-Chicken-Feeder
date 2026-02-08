@@ -1,5 +1,6 @@
 import pigpio
 import time
+import math
 
 servo_pin = 18  # GPIO18 (Pin 12) - VERIFIED WORKING
 
@@ -10,8 +11,8 @@ SERVO_MAX_PULSE = 2500  # 180 degrees (was duty cycle 12 at 50Hz = 2400µs)
 SERVO_OFF = 0           # Turn off servo signal
 
 # Speed control settings
-SERVO_STEP_SIZE = 3     # Degrees per step (60 steps per rotation)
-SERVO_STEP_DELAY = 0.02 # Seconds between steps (~1.2s per full rotation)
+SERVO_STEP_SIZE = 5     # Degrees per step (36 steps per full rotation)
+SERVO_STEP_DELAY = 0.012 # Base seconds between steps (~0.43s per full rotation)
 
 # Initialize pigpio
 pi = pigpio.pi()
@@ -21,11 +22,13 @@ if not pi.connected:
 
 def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
     """
-    Gradually move the servo from one angle to another for slower, smoother rotation.
+    Move the servo with ease-in/ease-out motion.
+    Starts gentle (protects the 3D printed rod), speeds up in the middle
+    (prevents feed from getting stuck), and slows down at the end (gentle stop).
     from_angle: starting angle (0-180)
     to_angle: target angle (0-180)
     step_size: degrees per step (default: SERVO_STEP_SIZE)
-    step_delay: seconds between steps (default: SERVO_STEP_DELAY)
+    step_delay: base seconds between steps (default: SERVO_STEP_DELAY)
     """
     if step_size is None:
         step_size = SERVO_STEP_SIZE
@@ -34,19 +37,30 @@ def slow_move_servo(from_angle, to_angle, step_size=None, step_delay=None):
 
     # Determine direction
     if from_angle < to_angle:
-        angles = range(from_angle, to_angle + 1, step_size)
+        angles = list(range(from_angle, to_angle + 1, step_size))
     else:
-        angles = range(from_angle, to_angle - 1, -step_size)
+        angles = list(range(from_angle, to_angle - 1, -step_size))
 
-    for angle in angles:
+    total_steps = len(angles)
+    for i, angle in enumerate(angles):
         pulse_width = SERVO_MIN_PULSE + (angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
         pi.set_servo_pulsewidth(servo_pin, int(pulse_width))
-        time.sleep(step_delay)
+
+        # Ease-in/ease-out: slower at start and end, faster in the middle
+        # progress goes from 0.0 to 1.0 across the movement
+        if total_steps > 1:
+            progress = i / (total_steps - 1)
+        else:
+            progress = 1.0
+        # Sine-based easing: delay is highest at edges, lowest at center
+        ease_factor = 1.0 + 1.5 * (1.0 - math.sin(math.pi * progress))
+        # ease_factor ranges from ~1.0 (middle) to ~2.5 (start/end)
+        time.sleep(step_delay * ease_factor)
 
     # Ensure we land exactly on the target angle
     final_pulse = SERVO_MIN_PULSE + (to_angle / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE)
     pi.set_servo_pulsewidth(servo_pin, int(final_pulse))
-    print(f"Servo slowly moved from {from_angle}° to {to_angle}°")
+    print(f"Servo moved from {from_angle}° to {to_angle}° (eased)")
 
 
 def activate_servo(position=None):
