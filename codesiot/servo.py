@@ -15,30 +15,32 @@ pi = pigpio.pi()
 if not pi.connected:
     raise RuntimeError("Failed to connect to pigpio daemon. Make sure pigpiod is running.")
 
+SERVO_DISPENSE_PULSE = int(SERVO_MIN_PULSE + (175 / 180.0) * (SERVO_MAX_PULSE - SERVO_MIN_PULSE))  # 175° = ~2444µs
+
 def activate_servo(position=None):
     """
     Activate servo motor using pigpio hardware PWM.
-    Feed is dispensed at BOTH positions (0° and 180°).
+    Feed is dispensed at BOTH positions (0° and 175°).
     position=0: move to 0° (dispense feed) - pulse width 500µs
-    position=180: move to 180° (dispense feed) - pulse width 2500µs
-    position=None: cycle between 0° and 180° (dispenses twice)
+    position=175: move to 175° (dispense feed) - pulse width ~2444µs
+    position=None: cycle between 0° and 175° (dispenses twice)
     """
     try:
         if position == 0:
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees
             print("Servo at 0° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
-        elif position == 180:
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees
-            print("Servo at 180° (feed dispensed)")
+        elif position == 175:
+            pi.set_servo_pulsewidth(servo_pin, SERVO_DISPENSE_PULSE)  # 175 degrees
+            print("Servo at 175° (feed dispensed)")
             time.sleep(2)  # Wait for feed to drop
         else:
-            # Default: cycle from 0° to 180° (dispenses at each position)
+            # Default: cycle from 0° to 175° (dispenses at each position)
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees - dispense
             print("Servo at 0° (feed dispensed)")
             time.sleep(2)
-            pi.set_servo_pulsewidth(servo_pin, SERVO_MAX_PULSE)  # 180 degrees - dispense
-            print("Servo at 180° (feed dispensed)")
+            pi.set_servo_pulsewidth(servo_pin, SERVO_DISPENSE_PULSE)  # 175 degrees - dispense
+            print("Servo at 175° (feed dispensed)")
             time.sleep(2)
     except Exception as e:
         print(f"Servo error: {e}")

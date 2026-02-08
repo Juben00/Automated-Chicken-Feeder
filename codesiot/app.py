@@ -11,11 +11,11 @@ app = Flask(__name__)
 SERVO_STATE_FILE = "/tmp/servo_position.txt"
 
 def get_servo_position():
-    """Get last known servo position (0 or 180). Defaults to 0."""
+    """Get last known servo position (0 or 175). Defaults to 0."""
     try:
         with open(SERVO_STATE_FILE, 'r') as f:
             pos = int(f.read().strip())
-            return pos if pos in [0, 180] else 0
+            return pos if pos in [0, 175] else 0
     except:
         return 0  # Default: assume at 0
 
@@ -100,8 +100,8 @@ def feed_cycle():
                             print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
                             
                             for i in range(num_drops):
-                                # Alternate between 0° and 180°, each drop dispenses 5g
-                                next_position = 0 if current_position == 180 else 180
+                                # Alternate between 0° and 175°, each drop dispenses 5g
+                                next_position = 0 if current_position == 175 else 175
                                 print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing 5g)")
                                 activate_servo(position=next_position)
                                 time.sleep(0.5)
@@ -160,8 +160,8 @@ def dispense_route():
                 print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
                 
                 for i in range(num_drops):
-                    # Alternate between 0° and 180°, each drop dispenses 5g
-                    next_position = 0 if current_position == 180 else 180
+                    # Alternate between 0° and 175°, each drop dispenses 5g
+                    next_position = 0 if current_position == 175 else 175
                     print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}°")
                     activate_servo(position=next_position)
                     current_position = next_position
