@@ -16,7 +16,7 @@ print("Ready to measure weight...")
 
 try:
     while True:
-        reading = hx.get_raw_data(num_measures=5)
+        reading = hx.get_raw_data(times=5)
         print(f"Reading: {reading}")
         time.sleep(0.1)
 except KeyboardInterrupt:
