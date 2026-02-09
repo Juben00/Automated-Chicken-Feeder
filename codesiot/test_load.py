@@ -2,6 +2,7 @@ import time
 import sys
 import json
 import os
+import statistics
 
 try:
     from hx711 import HX711
@@ -13,15 +14,27 @@ except ImportError:
 # ─── Settings ─────────────────────────────────────────────────────
 MAX_CAPACITY_G = 5000          # 5 kg load cell
 CALIBRATION_FILE = os.path.join(os.path.dirname(__file__), "calibration.json")
+ROLLING_WINDOW = 10            # number of past readings to smooth over
 
 
-def read_avg(hx, times=10):
-    """Read from HX711 and return the average, ignoring bad values."""
+def read_median(hx, times=15):
+    """
+    Read multiple samples from HX711, discard outliers, return median.
+    Median is far more resistant to noise spikes than a simple average.
+    """
     raw = hx.get_raw_data(times=times)
     valid = [v for v in raw if v is not None and v is not False]
-    if not valid:
+    if len(valid) < 3:
         return None
-    return sum(valid) / len(valid)
+
+    # Sort and trim the top/bottom 20% to remove spikes
+    valid.sort()
+    trim = max(1, len(valid) // 5)
+    trimmed = valid[trim:-trim]
+
+    if not trimmed:
+        return None
+    return statistics.median(trimmed)
 
 
 def save_calibration(offset, ref_unit):
@@ -49,24 +62,43 @@ def calibrate(hx):
     # Step 1 - Tare
     print("\n  Step 1: Remove everything from the scale.")
     input("  Press Enter when the scale is EMPTY...")
-    print("  Reading empty scale...")
-    time.sleep(1)
-    offset = read_avg(hx, times=20)
-    if offset is None:
+    print("  Reading empty scale (this takes a few seconds)...")
+    time.sleep(2)
+
+    # Take many samples for a stable tare
+    samples = []
+    for _ in range(5):
+        val = read_median(hx, times=20)
+        if val is not None:
+            samples.append(val)
+        time.sleep(0.2)
+
+    if not samples:
         print("  ERROR: No readings. Check wiring!")
         sys.exit(1)
+
+    offset = statistics.median(samples)
     print(f"  Zero offset = {offset:.0f}")
 
     # Step 2 - Place known weight
     print("\n  Step 2: Place a KNOWN weight on the scale.")
     print("  (Use something you know the exact weight of, e.g. 500g, 1kg)")
     input("  Press Enter when the weight is on the scale...")
-    print("  Reading...")
-    time.sleep(1)
-    raw_with_weight = read_avg(hx, times=20)
-    if raw_with_weight is None:
+    print("  Reading (this takes a few seconds)...")
+    time.sleep(2)
+
+    samples = []
+    for _ in range(5):
+        val = read_median(hx, times=20)
+        if val is not None:
+            samples.append(val)
+        time.sleep(0.2)
+
+    if not samples:
         print("  ERROR: No readings. Check wiring!")
         sys.exit(1)
+
+    raw_with_weight = statistics.median(samples)
 
     # Step 3 - Enter the known weight
     try:
@@ -97,8 +129,10 @@ def calibrate(hx):
 
 
 # ─── Initialize HX711 ────────────────────────────────────────────
-hx = HX711(dout_pin=5, pd_sck_pin=6, channel='A', gain=64)
+# gain=128 gives the best signal-to-noise ratio on channel A
+hx = HX711(dout_pin=5, pd_sck_pin=6, channel='A', gain=128)
 hx.reset()
+time.sleep(1)  # let the HX711 settle after reset
 print("HX711 initialized (5 kg load cell)\n")
 
 # ─── Load or run calibration ─────────────────────────────────────
@@ -113,41 +147,51 @@ else:
     print("No calibration found -- starting calibration.")
     offset, ref_unit = calibrate(hx)
 
-# ─── Continuous weight reading ────────────────────────────────────
+# ─── Continuous weight reading with rolling average ───────────────
 print("\nReading weight... Press Ctrl+C to stop.\n")
 print(f"  {'Time':<10}  {'Weight':>10}  {'Status'}")
 print("  " + "-" * 40)
 
+history = []  # rolling window of recent weight readings
+
 try:
     while True:
-        raw_avg = read_avg(hx, times=5)
+        raw_val = read_median(hx, times=15)
         timestamp = time.strftime("%H:%M:%S")
 
-        if raw_avg is None:
+        if raw_val is None:
             print(f"  {timestamp:<10}  {'---':>10}  NO DATA")
             time.sleep(1)
             continue
 
-        weight_g = (raw_avg - offset) / ref_unit
+        weight_g = (raw_val - offset) / ref_unit
 
-        # Clamp negative noise to zero
-        if weight_g < 0 and weight_g > -10:
-            weight_g = 0.0
+        # Add to rolling history
+        history.append(weight_g)
+        if len(history) > ROLLING_WINDOW:
+            history.pop(0)
+
+        # Smoothed weight = median of recent readings
+        smooth_g = statistics.median(history)
+
+        # Clamp small noise around zero
+        if abs(smooth_g) < 5:
+            smooth_g = 0.0
 
         # Status
-        if weight_g < 0:
+        if smooth_g < -5:
             status = "CHECK TARE"
-        elif weight_g > MAX_CAPACITY_G:
+        elif smooth_g > MAX_CAPACITY_G:
             status = "OVERLOAD!"
-        elif weight_g < 1:
+        elif smooth_g < 1:
             status = "EMPTY"
         else:
             status = "OK"
 
-        if weight_g >= 1000:
-            print(f"  {timestamp:<10}  {weight_g / 1000:>7.2f} kg  {status}")
+        if smooth_g >= 1000:
+            print(f"  {timestamp:<10}  {smooth_g / 1000:>7.2f} kg  {status}")
         else:
-            print(f"  {timestamp:<10}  {weight_g:>7.1f}  g  {status}")
+            print(f"  {timestamp:<10}  {smooth_g:>7.1f}  g  {status}")
 
         time.sleep(0.5)
 
