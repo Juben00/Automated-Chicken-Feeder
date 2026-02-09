@@ -1,6 +1,12 @@
 import time
 import sys
-from hx711 import HX711
+
+try:
+    from hx711 import HX711
+except ImportError:
+    print("ERROR: hx711 module not found.")
+    print("Install it with: sudo python3 -m pip install hx711")
+    sys.exit(1)
 
 hx = HX711(dout_pin=5, sck_pin=6)
 
