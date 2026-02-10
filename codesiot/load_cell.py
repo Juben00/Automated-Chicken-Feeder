@@ -1,546 +1,362 @@
 """
-load_cell.py - HX711 Load Cell Module for Chicken Feeder
-=========================================================
-Reusable module with aggressive noise filtering for accurate
-weight readings from an HX711 load cell amplifier.
-Compatible with tatobari's hx711py library.
+HX711 Load Cell Driver for Raspberry Pi using pigpio.
 
-Filtering pipeline:
-    1. Collect N raw samples (default 50)
-    2. Sort and trim top/bottom 20% (outlier rejection)
-    3. From remaining samples, reject anything > 1.5 IQR from median
-    4. Return median of surviving samples
+Uses pigpio daemon for microsecond-accurate GPIO timing, which is critical
+for reliable HX711 communication.  No third-party HX711 package needed.
 
-This makes readings resilient to electrical noise, vibration,
-and random ADC spikes common with cheap HX711 boards on 3.3V.
+Wiring (your setup):
+    HX711 DT   -> GPIO5  (physical pin 29)
+    HX711 SCK  -> GPIO6  (physical pin 31)
+    HX711 VCC  -> 3.3V   (physical pin 1)
+    HX711 GND  -> GND    (physical pin 9)
 
-Wiring (HX711 -> Raspberry Pi 3):
-    VCC  -> Pin 1  (3.3V)
-    GND  -> Pin 9  (Ground)
-    DT   -> Pin 29 (GPIO 5)
-    SCK  -> Pin 31 (GPIO 6)
-
-Load Cell -> HX711:
-    Red   -> E+  (Excitation+)
-    Black -> E-  (Excitation-)
-    White -> A-  (Signal-)
-    Green -> A+  (Signal+)
-
-Usage:
+Usage as module:
     from load_cell import LoadCell
-
     lc = LoadCell()
     lc.tare()
-    weight = lc.get_weight()
-    print(f"Weight: {weight:.1f} g")
-    lc.cleanup()
+    print(lc.get_grams())
+
+Usage standalone:
+    python load_cell.py                   # continuous reading (must calibrate first)
+    python load_cell.py --raw             # show raw ADC values (no calibration needed)
+    python load_cell.py --once            # single reading then exit
+    python load_cell.py --tare            # tare before reading
+    python load_cell.py --samples 30      # override samples per reading
+
+Requires: pigpio daemon running  ->  sudo pigpiod
 """
 
-import time
+from __future__ import annotations
+
 import json
-import os
 import statistics
-import RPi.GPIO as GPIO
-from hx711 import HX711
+import time
+from pathlib import Path
 
-# ==============================================================
-# Pin Configuration (BCM numbering)
-# ==============================================================
-HX711_DT_PIN = 5      # Data pin  (Physical Pin 29)
-HX711_SCK_PIN = 6     # Clock pin (Physical Pin 31)
+import pigpio
 
-# ==============================================================
-# Filtering Settings - tune these if readings are still noisy
-# ==============================================================
-DEFAULT_SAMPLES = 50           # Raw samples per reading (more = slower but cleaner)
-TRIM_PERCENT = 0.20            # Trim this % from top & bottom (outlier removal)
-IQR_FACTOR = 1.5               # Reject values beyond this * IQR from median
-SETTLE_TIME = 0.01             # Seconds between individual raw samples
+# ---------------------------------------------------------------------------
+# Pin defaults (BCM numbering) — matches your wiring
+# ---------------------------------------------------------------------------
+DEFAULT_DT_PIN = 5       # GPIO5  = physical pin 29
+DEFAULT_SCK_PIN = 6      # GPIO6  = physical pin 31
 
-CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+# Calibration file lives next to this script
+CALIBRATION_FILE = Path(__file__).resolve().parent / "hx711_calibration.json"
 
 
-# ==============================================================
-# Filtering Functions
-# ==============================================================
-
-def filtered_median(raw_samples, trim_pct=TRIM_PERCENT, iqr_factor=IQR_FACTOR):
+class HX711:
     """
-    Aggressively filter a list of raw ADC samples and return
-    a clean median value.
+    Low-level HX711 24-bit ADC driver using pigpio for bit-bang SPI.
 
-    Pipeline:
-        1. Sort values
-        2. Trim top/bottom trim_pct (removes extreme outliers)
-        3. Of remaining, compute IQR and reject values beyond iqr_factor * IQR
-        4. Return median of survivors
-
-    Args:
-        raw_samples: List of raw int/float values from the ADC.
-        trim_pct:    Fraction to trim from each end (0.20 = 20%).
-        iqr_factor:  IQR multiplier for outlier rejection.
-
-    Returns:
-        Filtered median value (float), or None if too few samples survive.
+    The HX711 protocol:
+    1. Wait for DOUT to go LOW  (data ready).
+    2. Pulse SCK 24 times, reading DOUT each time  -> 24-bit raw value.
+    3. Pulse SCK 1-3 more times to set gain for the *next* conversion:
+         1 extra pulse  = Channel A, gain 128  (default, most sensitive)
+         2 extra pulses = Channel B, gain 32
+         3 extra pulses = Channel A, gain 64
+    4. DOUT goes HIGH after all pulses  -> chip starts next conversion.
     """
-    if not raw_samples or len(raw_samples) < 3:
-        return None
 
-    # Step 1: Sort
-    sorted_vals = sorted(raw_samples)
+    # Gain -> extra clock pulses after the 24 data bits
+    _GAIN_PULSES = {128: 1, 64: 3, 32: 2}
 
-    # Step 2: Trim top/bottom
-    trim_count = int(len(sorted_vals) * trim_pct)
-    if trim_count > 0:
-        trimmed = sorted_vals[trim_count:-trim_count]
-    else:
-        trimmed = sorted_vals[:]
+    def __init__(
+        self,
+        pi: pigpio.pi,
+        dout_pin: int = DEFAULT_DT_PIN,
+        sck_pin: int = DEFAULT_SCK_PIN,
+        gain: int = 128,
+    ):
+        self._pi = pi
+        self._dout = dout_pin
+        self._sck = sck_pin
 
-    if len(trimmed) < 3:
-        trimmed = sorted_vals[:]  # Fall back to untrimmed if too few left
+        if gain not in self._GAIN_PULSES:
+            raise ValueError(f"Gain must be 128, 64, or 32 — got {gain}")
+        self._gain = gain
+        self._extra_pulses = self._GAIN_PULSES[gain]
 
-    # Step 3: IQR-based outlier rejection
-    n = len(trimmed)
-    q1 = trimmed[n // 4]
-    q3 = trimmed[(3 * n) // 4]
-    iqr = q3 - q1
+        # Configure pins
+        self._pi.set_mode(self._dout, pigpio.INPUT)
+        self._pi.set_pull_up_down(self._dout, pigpio.PUD_DOWN)
+        self._pi.set_mode(self._sck, pigpio.OUTPUT)
+        self._pi.write(self._sck, 0)
 
-    if iqr > 0:
-        lower_bound = q1 - iqr_factor * iqr
-        upper_bound = q3 + iqr_factor * iqr
-        clean = [v for v in trimmed if lower_bound <= v <= upper_bound]
-    else:
-        clean = trimmed  # All values very close, no rejection needed
+        # Flush one reading to lock in gain setting
+        self._read_raw()
 
-    if len(clean) < 2:
-        clean = trimmed  # Fall back if IQR rejected too many
+    # ------------------------------------------------------------------
+    # Low-level
+    # ------------------------------------------------------------------
+    def is_ready(self) -> bool:
+        """HX711 pulls DOUT low when a new conversion is ready."""
+        return self._pi.read(self._dout) == 0
 
-    # Step 4: Return median
-    return statistics.median(clean)
+    def _wait_ready(self, timeout_s: float = 2.0) -> None:
+        """Block until DOUT goes LOW or timeout."""
+        deadline = time.time() + timeout_s
+        while not self.is_ready():
+            if time.time() > deadline:
+                raise TimeoutError(
+                    "HX711 not responding — check wiring (DT/SCK) and power."
+                )
+            time.sleep(0.001)
 
+    def _read_raw(self) -> int:
+        """
+        Read one raw 24-bit signed value from the HX711.
 
-def collect_raw_samples(hx, num_samples=DEFAULT_SAMPLES, settle_time=SETTLE_TIME):
-    """
-    Collect multiple raw readings from the HX711.
+        Returns an integer roughly in the range -8 388 608 … +8 388 607.
+        """
+        self._wait_ready()
 
-    Args:
-        hx:          HX711 instance.
-        num_samples: Number of raw samples to collect.
-        settle_time: Delay between each sample (seconds).
+        # Shift in 24 data bits (MSB first)
+        raw = 0
+        for _ in range(24):
+            self._pi.write(self._sck, 1)
+            # Small delay is inherent in the pigpio daemon round-trip;
+            # the HX711 needs SCK HIGH for >= 0.1 µs — pigpio is fine.
+            raw = (raw << 1) | self._pi.read(self._dout)
+            self._pi.write(self._sck, 0)
 
-    Returns:
-        List of raw integer values.
-    """
-    samples = []
-    for _ in range(num_samples):
-        try:
-            val = hx.read_long()
-            samples.append(val)
-        except Exception:
-            pass
-        if settle_time > 0:
-            time.sleep(settle_time)
-    return samples
+        # Extra pulses to set gain/channel for NEXT conversion
+        for _ in range(self._extra_pulses):
+            self._pi.write(self._sck, 1)
+            self._pi.write(self._sck, 0)
+
+        # Convert unsigned 24-bit to signed (two's complement)
+        if raw & 0x800000:
+            raw -= 0x1000000
+
+        return raw
+
+    def read_raw_average(self, samples: int = 10) -> float:
+        """Return the mean of *samples* raw readings (outliers removed)."""
+        if samples < 1:
+            raise ValueError("samples must be >= 1")
+
+        readings: list[int] = []
+        for _ in range(samples):
+            readings.append(self._read_raw())
+
+        if samples >= 5:
+            # Drop lowest and highest to remove spikes
+            readings.sort()
+            trimmed = readings[1:-1]
+        else:
+            trimmed = readings
+
+        return sum(trimmed) / len(trimmed)
+
+    # ------------------------------------------------------------------
+    # Power management
+    # ------------------------------------------------------------------
+    def power_down(self) -> None:
+        """Enter low-power mode (hold SCK HIGH > 60 µs)."""
+        self._pi.write(self._sck, 0)
+        self._pi.write(self._sck, 1)
+        time.sleep(0.0001)  # 100 µs
+
+    def power_up(self) -> None:
+        """Wake from low-power mode."""
+        self._pi.write(self._sck, 0)
+        time.sleep(0.001)
+        # Flush one reading to re-lock gain
+        self._read_raw()
 
 
 class LoadCell:
     """
-    High-level interface for reading weight from an HX711 load cell.
+    High-level interface: tare, calibrate, read grams.
 
-    Uses aggressive multi-stage filtering for accurate readings even
-    with noisy ADCs and 3.3V power supply.
+    Wraps HX711 and adds offset/scale calibration with JSON persistence.
     """
 
-    def __init__(self, dout_pin=HX711_DT_PIN, pd_sck_pin=HX711_SCK_PIN, gain=128):
-        """
-        Initialize the HX711 load cell amplifier.
+    def __init__(
+        self,
+        dout_pin: int = DEFAULT_DT_PIN,
+        sck_pin: int = DEFAULT_SCK_PIN,
+        gain: int = 128,
+        calibration_file: Path | str = CALIBRATION_FILE,
+    ):
+        self._cal_path = Path(calibration_file)
+        self._offset: float = 0.0          # raw value at zero load
+        self._scale: float = 1.0           # raw-units-per-gram
 
-        Args:
-            dout_pin:   BCM GPIO pin connected to HX711 DT (data).
-            pd_sck_pin: BCM GPIO pin connected to HX711 SCK (clock).
-            gain:       Amplifier gain (128 or 64 for channel A, 32 for channel B).
-        """
-        self.dout_pin = dout_pin
-        self.pd_sck_pin = pd_sck_pin
-        self._reference_unit = 1
-        self._offset = 0
-        self._calibrated = False
-
-        try:
-            # tatobari's hx711py uses positional args: HX711(dout, pd_sck, gain)
-            self.hx = HX711(dout_pin, pd_sck_pin, gain)
-            self.hx.set_reading_format("MSB", "MSB")
-
-            # Fix Python 3 bug in tatobari's hx711py
-            self._patch_hx711_read_median()
-
-            self.hx.reset()
-            time.sleep(0.5)
-
-            # Discard first few readings (HX711 needs to settle after reset)
-            for _ in range(5):
-                try:
-                    self.hx.read_long()
-                except Exception:
-                    pass
-                time.sleep(0.05)
-
-            print(f"[LoadCell] Initialized on DT=GPIO{dout_pin}, SCK=GPIO{pd_sck_pin}")
-        except Exception as e:
+        # Connect to pigpio daemon
+        self._pi = pigpio.pi()
+        if not self._pi.connected:
             raise RuntimeError(
-                f"[LoadCell] Failed to initialize HX711: {e}\n"
-                f"  - Check wiring: DT->GPIO{dout_pin} (Pin 29), SCK->GPIO{pd_sck_pin} (Pin 31)\n"
-                f"  - Ensure HX711 has power: VCC->3.3V (Pin 1), GND->GND (Pin 9)\n"
-                f"  - Make sure no other process is using these GPIO pins"
+                "Cannot connect to pigpio daemon. Start it with:  sudo pigpiod"
             )
 
-        # Try to load saved calibration
-        if os.path.exists(CALIBRATION_FILE):
-            self.load_calibration()
+        self._hx = HX711(self._pi, dout_pin, sck_pin, gain)
 
-    def _patch_hx711_read_median(self):
-        """
-        Monkey-patch the read_median method in tatobari's hx711py to fix
-        a Python 3 incompatibility: len(valueList) / 2 returns a float,
-        but it's used as a slice index which requires an int.
-        """
-        hx = self.hx
+        # Load saved calibration if it exists
+        self._load_calibration()
 
-        def fixed_read_median(times=3):
-            if times <= 0:
-                raise ValueError("HX711::read_median(): times must be greater than zero!")
-            if times == 1:
-                return hx.read_long()
-            valueList = []
-            for x in range(times):
-                valueList.append(hx.read_long())
-            valueList.sort()
-            if (times & 0x1) == 0x1:
-                return valueList[len(valueList) // 2]
-            else:
-                midpoint = len(valueList) // 2
-                return sum(valueList[midpoint:midpoint + 2]) / 2.0
+    # ------------------------------------------------------------------
+    # Calibration persistence
+    # ------------------------------------------------------------------
+    def _load_calibration(self) -> bool:
+        """Load offset + scale from JSON.  Returns True if loaded."""
+        if self._cal_path.exists():
+            try:
+                data = json.loads(self._cal_path.read_text(encoding="utf-8"))
+                self._offset = float(data["offset"])
+                self._scale = float(data["scale"])
+                print(f"[LoadCell] Calibration loaded  (offset={self._offset:.1f}, scale={self._scale:.4f})")
+                return True
+            except (KeyError, ValueError, json.JSONDecodeError) as exc:
+                print(f"[LoadCell] Bad calibration file, ignoring: {exc}")
+        return False
 
-        hx.read_median = fixed_read_median
-
-    # ==============================================================
-    # Core filtered reading methods
-    # ==============================================================
-
-    def _read_filtered(self, num_samples=DEFAULT_SAMPLES):
-        """
-        Take a filtered reading using our full noise-rejection pipeline.
-        Returns raw ADC value (no offset/reference applied).
-
-        Args:
-            num_samples: Number of raw samples to collect.
-
-        Returns:
-            Filtered median raw value, or None on error.
-        """
-        samples = collect_raw_samples(self.hx, num_samples)
-        if len(samples) < 5:
-            print("[LoadCell] WARNING: Very few samples collected. Check connection.")
-            return None
-        return filtered_median(samples)
-
-    def _read_filtered_value(self, num_samples=DEFAULT_SAMPLES):
-        """
-        Take a filtered reading with tare offset subtracted.
-
-        Returns:
-            Filtered value minus offset, or None on error.
-        """
-        raw = self._read_filtered(num_samples)
-        if raw is None:
-            return None
-        return raw - self._offset
-
-    # ==============================================================
-    # Public API
-    # ==============================================================
-
-    def tare(self, num_samples=80):
-        """
-        Zero/tare the scale. Call with nothing on the load cell.
-        Uses extra-heavy filtering for a clean zero point.
-
-        Args:
-            num_samples: Number of samples for tare (more = better zero).
-
-        Returns:
-            The tare offset value, or None on error.
-        """
-        print(f"[LoadCell] Taring... (collecting {num_samples} samples)")
-        try:
-            raw = self._read_filtered(num_samples)
-            if raw is None:
-                print("[LoadCell] WARNING: Could not get stable tare reading.")
-                return None
-
-            self._offset = raw
-            # Also set the offset in the hx711 library for its internal methods
-            self.hx.set_offset(raw)
-            print(f"[LoadCell] Tare complete. Offset: {raw:.0f}")
-            return raw
-        except Exception as e:
-            print(f"[LoadCell] Tare error: {e}")
-            return None
-
-    def get_raw_value(self, num_samples=DEFAULT_SAMPLES):
-        """
-        Get the filtered raw ADC value (after tare offset subtracted).
-
-        Args:
-            num_samples: Number of samples to collect.
-
-        Returns:
-            Filtered raw value (float), or None on error.
-        """
-        return self._read_filtered_value(num_samples)
-
-    def read_raw_no_offset(self, num_samples=DEFAULT_SAMPLES):
-        """
-        Get the filtered absolute raw ADC value (ignoring tare offset).
-
-        Args:
-            num_samples: Number of samples to collect.
-
-        Returns:
-            Filtered raw value (float), or None on error.
-        """
-        return self._read_filtered(num_samples)
-
-    def get_weight(self, num_samples=DEFAULT_SAMPLES):
-        """
-        Get weight in grams. Requires prior calibration.
-
-        Args:
-            num_samples: Number of samples for this reading.
-
-        Returns:
-            Weight in grams (float), or None if not calibrated / error.
-        """
-        if not self._calibrated:
-            print("[LoadCell] ERROR: Not calibrated. Run calibrate_hx711.py first.")
-            return None
-
-        value = self._read_filtered_value(num_samples)
-        if value is None:
-            return None
-
-        weight = value / self._reference_unit
-        return round(weight, 1)
-
-    def get_stable_weight(self, num_passes=5, stability_threshold=2.0,
-                          timeout=15):
-        """
-        Get a stable weight reading by taking multiple filtered passes
-        and checking they agree within the threshold.
-
-        Args:
-            num_passes: Number of filtered weight readings to compare.
-            stability_threshold: Max allowed spread (grams) between passes.
-            timeout: Max seconds to wait for stability.
-
-        Returns:
-            Stable weight in grams (float), or best estimate on timeout.
-        """
-        if not self._calibrated:
-            print("[LoadCell] ERROR: Not calibrated.")
-            return None
-
-        readings = []
-        start = time.time()
-
-        while time.time() - start < timeout:
-            w = self.get_weight(num_samples=40)
-            if w is None:
-                continue
-
-            readings.append(w)
-
-            if len(readings) >= num_passes:
-                recent = readings[-num_passes:]
-                spread = max(recent) - min(recent)
-                if spread <= stability_threshold:
-                    return round(statistics.median(recent), 1)
-
-            time.sleep(0.2)
-
-        # Timeout - return best estimate
-        if readings:
-            return round(statistics.median(readings[-num_passes:] if len(readings) >= num_passes else readings), 1)
-        return None
-
-    def calibrate(self, known_weight_grams, num_passes=3, samples_per_pass=80):
-        """
-        Calibrate the scale using a known weight with multi-pass averaging.
-
-        Takes multiple calibration passes and averages the reference unit
-        for better accuracy.
-
-        Args:
-            known_weight_grams: Exact weight of calibration object (grams).
-            num_passes: Number of calibration passes to average.
-            samples_per_pass: Raw samples per pass.
-
-        Returns:
-            The reference unit (float) if successful, None otherwise.
-        """
-        print(f"[LoadCell] Calibrating with {known_weight_grams}g reference weight...")
-        print(f"[LoadCell] Running {num_passes} passes x {samples_per_pass} samples each...")
-
-        ref_units = []
-
-        for p in range(num_passes):
-            value = self._read_filtered_value(samples_per_pass)
-
-            if value is None or value == 0:
-                print(f"  Pass {p+1}: FAILED (no valid reading)")
-                continue
-
-            ref = value / known_weight_grams
-            ref_units.append(ref)
-            print(f"  Pass {p+1}: raw={value:.0f}, ref_unit={ref:.2f}")
-            time.sleep(0.5)
-
-        if not ref_units:
-            print("[LoadCell] ERROR: All calibration passes failed.")
-            return None
-
-        # Use median of passes (resistant to one bad pass)
-        self._reference_unit = statistics.median(ref_units)
-        self.hx.set_reference_unit(self._reference_unit)
-        self._calibrated = True
-
-        if len(ref_units) > 1:
-            spread = max(ref_units) - min(ref_units)
-            spread_pct = (spread / abs(self._reference_unit)) * 100 if self._reference_unit != 0 else 0
-            print(f"\n[LoadCell] Calibration complete!")
-            print(f"  Reference unit: {self._reference_unit:.2f} (median of {len(ref_units)} passes)")
-            print(f"  Pass spread: {spread:.2f} ({spread_pct:.1f}%)")
-        else:
-            print(f"\n[LoadCell] Calibration complete!")
-            print(f"  Reference unit: {self._reference_unit:.2f}")
-
-        return self._reference_unit
-
-    def set_reference_unit(self, ref_unit):
-        """
-        Manually set the reference unit (raw units per gram).
-
-        Args:
-            ref_unit: The reference unit from a previous calibration.
-        """
-        self._reference_unit = ref_unit
-        self.hx.set_reference_unit(ref_unit)
-        self._calibrated = True
-        print(f"[LoadCell] Reference unit set to {ref_unit:.2f}")
-
-    def save_calibration(self, filepath=None):
-        """
-        Save calibration data to a JSON file.
-        """
-        if filepath is None:
-            filepath = CALIBRATION_FILE
-
-        if not self._calibrated:
-            print("[LoadCell] WARNING: No calibration data to save.")
-            return False
-
-        data = {
-            "reference_unit": self._reference_unit,
-            "dout_pin": self.dout_pin,
-            "pd_sck_pin": self.pd_sck_pin,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "notes": "Generated by calibrate_hx711.py"
+    def save_calibration(self) -> None:
+        """Persist current offset + scale to JSON."""
+        payload = {
+            "offset": self._offset,
+            "scale": self._scale,
+            "dout_pin_bcm": self._hx._dout,
+            "sck_pin_bcm": self._hx._sck,
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
+        self._cal_path.parent.mkdir(parents=True, exist_ok=True)
+        self._cal_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"[LoadCell] Calibration saved to {self._cal_path}")
 
-        try:
-            with open(filepath, 'w') as f:
-                json.dump(data, f, indent=4)
-            print(f"[LoadCell] Calibration saved to {filepath}")
-            return True
-        except Exception as e:
-            print(f"[LoadCell] Error saving calibration: {e}")
-            return False
-
-    def load_calibration(self, filepath=None):
+    # ------------------------------------------------------------------
+    # Tare (zero the scale)
+    # ------------------------------------------------------------------
+    def tare(self, samples: int = 20) -> None:
         """
-        Load calibration data from a JSON file.
+        Set the zero-point offset with nothing on the scale.
+
+        Takes *samples* readings (default 20) and averages them.
         """
-        if filepath is None:
-            filepath = CALIBRATION_FILE
+        print("[LoadCell] Taring — remove all weight from the scale ...")
+        time.sleep(0.5)
+        self._offset = self._hx.read_raw_average(samples)
+        print(f"[LoadCell] Tare complete  (offset = {self._offset:.1f})")
 
+    # ------------------------------------------------------------------
+    # Calibration
+    # ------------------------------------------------------------------
+    def calibrate(self, known_grams: float, samples: int = 25) -> None:
+        """
+        Calibrate scale factor using a known reference weight.
+
+        Call tare() first with an empty scale, then place the weight and
+        call calibrate(known_grams).
+        """
+        if known_grams <= 0:
+            raise ValueError("known_grams must be > 0")
+
+        raw = self._hx.read_raw_average(samples)
+        net = raw - self._offset
+        if abs(net) < 10:
+            raise RuntimeError(
+                "Raw reading is almost the same as tare offset — "
+                "is the weight actually on the scale?"
+            )
+        self._scale = net / known_grams
+        print(f"[LoadCell] Scale ratio set  ({self._scale:.4f} raw/gram)")
+
+    # ------------------------------------------------------------------
+    # Read weight
+    # ------------------------------------------------------------------
+    def get_raw(self, samples: int = 10) -> float:
+        """Return the raw (uncalibrated) averaged ADC value."""
+        return self._hx.read_raw_average(samples)
+
+    def get_grams(self, samples: int = 10) -> float:
+        """
+        Return calibrated weight in grams.
+
+        Uses median-of-3-batches for extra stability:
+            - Take 3 independent averaged readings.
+            - Return the median (rejects a single noisy batch).
+        """
+        batch_values: list[float] = []
+        for _ in range(3):
+            raw = self._hx.read_raw_average(samples)
+            grams = (raw - self._offset) / self._scale
+            batch_values.append(grams)
+        return float(statistics.median(batch_values))
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+    def close(self) -> None:
+        """Power down HX711 and disconnect pigpio."""
         try:
-            with open(filepath, 'r') as f:
-                data = json.load(f)
-
-            self._reference_unit = data["reference_unit"]
-            self.hx.set_reference_unit(self._reference_unit)
-            self._calibrated = True
-            print(f"[LoadCell] Calibration loaded from {filepath}")
-            print(f"  Reference unit: {self._reference_unit:.2f}")
-            print(f"  Calibrated on: {data.get('timestamp', 'unknown')}")
-            return True
-        except FileNotFoundError:
-            print(f"[LoadCell] No calibration file found at {filepath}")
-            return False
-        except Exception as e:
-            print(f"[LoadCell] Error loading calibration: {e}")
-            return False
-
-    def is_calibrated(self):
-        """Check if the scale has been calibrated."""
-        return self._calibrated
-
-    def power_down(self):
-        """Power down the HX711 to save energy."""
-        self.hx.power_down()
-
-    def power_up(self):
-        """Power up the HX711."""
-        self.hx.power_up()
-
-    def cleanup(self):
-        """Clean up GPIO resources."""
+            self._hx.power_down()
+        except Exception:
+            pass
         try:
-            GPIO.cleanup()
-            print("[LoadCell] GPIO cleanup done.")
+            self._pi.stop()
         except Exception:
             pass
 
 
-# ==============================================================
-# Quick test when run directly
-# ==============================================================
+# =======================================================================
+# Standalone CLI — run directly on the Pi
+# =======================================================================
+def _cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Read weight (grams) from HX711 load cell via pigpio.",
+    )
+    parser.add_argument("--dt", type=int, default=DEFAULT_DT_PIN,
+                        help="HX711 DT pin in BCM (default: 5 = physical pin 29)")
+    parser.add_argument("--sck", type=int, default=DEFAULT_SCK_PIN,
+                        help="HX711 SCK pin in BCM (default: 6 = physical pin 31)")
+    parser.add_argument("--samples", type=int, default=15,
+                        help="Samples per averaged reading (default: 15)")
+    parser.add_argument("--interval", type=float, default=0.5,
+                        help="Seconds between readings (default: 0.5)")
+    parser.add_argument("--raw", action="store_true",
+                        help="Show raw ADC values instead of grams")
+    parser.add_argument("--once", action="store_true",
+                        help="Print one reading then exit")
+    parser.add_argument("--tare", action="store_true",
+                        help="Tare (zero) the scale before reading")
+    args = parser.parse_args()
+
+    lc = LoadCell(dout_pin=args.dt, sck_pin=args.sck)
+
+    try:
+        if args.tare:
+            lc.tare(samples=args.samples)
+
+        if args.raw:
+            print("\n--- Raw ADC values (Ctrl+C to stop) ---\n")
+        else:
+            if lc._scale == 1.0 and lc._offset == 0.0:
+                print("\n[!] No calibration found. Run calibrate_hx711.py first,")
+                print("    or use --raw to see uncalibrated values.\n")
+                return
+            print(f"\n--- Weight in grams (Ctrl+C to stop) ---\n")
+
+        while True:
+            if args.raw:
+                val = lc.get_raw(args.samples)
+                print(f"  raw: {val:>12.1f}")
+            else:
+                grams = lc.get_grams(args.samples)
+                print(f"  {grams:>8.2f} g")
+
+            if args.once:
+                break
+            time.sleep(args.interval)
+
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    finally:
+        lc.close()
+
+
 if __name__ == "__main__":
-    print("=" * 50)
-    print("  HX711 Load Cell - Quick Test")
-    print("=" * 50)
-    print()
-
-    lc = LoadCell()
-
-    input("Remove everything from the load cell, then press Enter...")
-    lc.tare()
-    print()
-
-    if lc.is_calibrated():
-        print("Calibration found! Reading weight...")
-        for i in range(10):
-            weight = lc.get_weight()
-            if weight is not None:
-                print(f"  Reading {i+1}: {weight:.1f} g")
-            time.sleep(0.5)
-    else:
-        print("No calibration found. Showing raw values...")
-        print("Run calibrate_hx711.py to calibrate for gram readings.")
-        for i in range(10):
-            raw = lc.get_raw_value()
-            if raw is not None:
-                print(f"  Reading {i+1}: {raw}")
-            time.sleep(0.5)
-
-    lc.cleanup()
+    _cli()

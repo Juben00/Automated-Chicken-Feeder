@@ -1,283 +1,141 @@
-#!/usr/bin/env python3
 """
-calibrate_hx711.py - Interactive HX711 Load Cell Calibration
-=============================================================
-Step-by-step calibration with multi-pass averaging and heavy
-noise filtering for accurate gram measurements.
+Interactive HX711 calibration wizard for Raspberry Pi.
 
-Run:
-    python3 calibrate_hx711.py
+Walks you through:
+  Step 1 — Tare (zero the empty scale)
+  Step 2 — Place a known weight and compute the scale ratio
+  Step 3 — Verify accuracy with the reference weight still on
+  Step 4 — Fine-tune with a second correction pass
+  Step 5 — Multi-point verification (optional)
 
-Wiring (HX711 -> Raspberry Pi 3):
-    VCC  -> Pin 1  (3.3V)
-    GND  -> Pin 9  (Ground)
-    DT   -> Pin 29 (GPIO 5)
-    SCK  -> Pin 31 (GPIO 6)
+Saves calibration to hx711_calibration.json so load_cell.py can use it.
+
+Usage:
+    python calibrate_hx711.py --known-grams 100
+    python calibrate_hx711.py --known-grams 200 --samples 30
+
+Requires: pigpio daemon running  ->  sudo pigpiod
 """
 
-import time
+from __future__ import annotations
+
+import argparse
 import sys
-import os
-import statistics
-import RPi.GPIO as GPIO
+import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from load_cell import LoadCell, CALIBRATION_FILE
+from load_cell import LoadCell, DEFAULT_DT_PIN, DEFAULT_SCK_PIN
 
 
-def print_header(text):
-    print()
-    print("=" * 60)
-    print(f"  {text}")
-    print("=" * 60)
-    print()
+def wait_enter(prompt: str = "") -> None:
+    """Print prompt and block until the user presses Enter."""
+    input(f"\n>>> {prompt}  [press Enter]")
 
 
-def print_step(step_num, text):
-    print(f"\n>>> STEP {step_num}: {text}")
-    print("-" * 40)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Calibrate HX711 load cell.")
+    parser.add_argument(
+        "--known-grams", type=float, required=True,
+        help="Mass of your reference weight in grams (e.g. 100)",
+    )
+    parser.add_argument("--dt", type=int, default=DEFAULT_DT_PIN,
+                        help="HX711 DT pin BCM (default: 5)")
+    parser.add_argument("--sck", type=int, default=DEFAULT_SCK_PIN,
+                        help="HX711 SCK pin BCM (default: 6)")
+    parser.add_argument("--samples", type=int, default=25,
+                        help="Samples per averaged reading (default: 25)")
+    args = parser.parse_args()
 
-
-def get_float_input(prompt, min_val=0.1, max_val=50000):
-    while True:
-        try:
-            value = float(input(prompt))
-            if min_val <= value <= max_val:
-                return value
-            print(f"  Please enter a value between {min_val} and {max_val}")
-        except ValueError:
-            print("  Invalid input. Please enter a number.")
-        except KeyboardInterrupt:
-            print("\n\nCalibration cancelled.")
-            sys.exit(0)
-
-
-def main():
-    print_header("HX711 LOAD CELL CALIBRATION (Enhanced)")
-    print("This script uses aggressive noise filtering and multi-pass")
-    print("calibration for the best possible accuracy.")
-    print()
-    print("Pin Configuration:")
-    print("  DT (Data)   -> GPIO 5  (Physical Pin 29)")
-    print("  SCK (Clock) -> GPIO 6  (Physical Pin 31)")
-    print("  VCC         -> 3.3V    (Physical Pin 1)")
-    print("  GND         -> Ground  (Physical Pin 9)")
-
-    # ─── Initialize ────────────────────────────────────────────
-    print_step(1, "INITIALIZATION")
-    print("Connecting to HX711...")
-
-    try:
-        lc = LoadCell()
-    except Exception as e:
-        print(f"\nERROR: {e}")
-        print("\nTroubleshooting:")
-        print("  1. Check all wiring connections")
-        print("  2. Ensure HX711 has power (VCC and GND)")
-        print("  3. Verify DT is on GPIO 5 (Pin 29) and SCK is on GPIO 6 (Pin 31)")
-        print("  4. Try swapping the green (A+) and white (A-) load cell wires")
+    if args.known_grams <= 0:
+        print("Error: --known-grams must be positive.")
         sys.exit(1)
 
-    print("HX711 connected successfully!\n")
+    known = args.known_grams
 
-    # ─── Warm-up ──────────────────────────────────────────────
-    print_step(2, "WARM-UP")
-    print("Taking warm-up readings to stabilize the ADC...")
-    print("(The HX711 needs 10-20 readings to settle after power-on)\n")
+    print("=" * 55)
+    print("   HX711 Calibration Wizard")
+    print("=" * 55)
+    print(f"   Reference weight : {known:.2f} g")
+    print(f"   DT pin (BCM)     : GPIO{args.dt}")
+    print(f"   SCK pin (BCM)    : GPIO{args.sck}")
+    print(f"   Samples/reading  : {args.samples}")
+    print("=" * 55)
 
-    for i in range(5):
-        raw = lc.read_raw_no_offset(num_samples=20)
-        if raw is not None:
-            print(f"  Warm-up {i+1}/5: {raw:.0f}")
-        else:
-            print(f"  Warm-up {i+1}/5: no data")
-        time.sleep(0.3)
-
-    print("\nWarm-up complete.")
-
-    # ─── Tare ─────────────────────────────────────────────────
-    print_step(3, "TARE (ZERO THE SCALE)")
-    print("Remove EVERYTHING from the load cell.")
-    print("The load cell should be completely empty/unloaded.")
-    print()
-    input("Press Enter when the load cell is empty...")
-
-    print("\nZeroing the scale (heavy filtering, takes a few seconds)...")
-    tare_val = lc.tare(num_samples=100)
-
-    if tare_val is None:
-        print("\nWARNING: Tare failed. Check wiring.")
-        resp = input("Continue anyway? (y/n): ").strip().lower()
-        if resp != 'y':
-            lc.cleanup()
-            sys.exit(0)
-
-    # Verify zero
-    print("\nVerifying zero point (5 filtered readings)...")
-    zero_readings = []
-    for i in range(5):
-        val = lc.get_raw_value(num_samples=50)
-        if val is not None:
-            zero_readings.append(val)
-            print(f"  Zero check {i+1}: {val:.0f}")
-        time.sleep(0.3)
-
-    if zero_readings:
-        spread = max(zero_readings) - min(zero_readings)
-        avg = statistics.mean(zero_readings)
-        print(f"\n  Average: {avg:.0f} (should be near 0)")
-        print(f"  Spread:  {spread:.0f}")
-
-    print("\nTare complete!")
-
-    # ─── Calibration Weight ───────────────────────────────────
-    print_step(4, "PLACE CALIBRATION WEIGHT")
-    print("You need an object with a KNOWN weight in grams.")
-    print()
-    print("TIPS FOR BEST RESULTS:")
-    print("  - Use the HEAVIEST object you can (heavier = more accurate)")
-    print("  - Verify its weight on a kitchen scale first")
-    print("  - A full water bottle (500g) or bag of rice works great")
-    print("  - Center it on the load cell")
-    print("  - Place it gently and wait for it to settle")
-    print()
-
-    known_weight = get_float_input("Enter the weight of your calibration object (grams): ")
-    print(f"\nCalibration weight: {known_weight}g")
-    print(f"Place the {known_weight}g object on the load cell now.")
-    print()
-    input("Press Enter when the weight is placed and stable...")
-
-    print("\nWaiting 3 seconds for load cell to settle...")
-    time.sleep(3)
-
-    # ─── Multi-pass Calibration ───────────────────────────────
-    print_step(5, "CALCULATING CALIBRATION FACTOR (Multi-pass)")
-    print(f"Running 5 calibration passes with 80 samples each...\n")
-
-    ref_unit = lc.calibrate(known_weight, num_passes=5, samples_per_pass=80)
-
-    if ref_unit is None:
-        print("\nERROR: Calibration failed.")
-        print("Possible causes:")
-        print("  1. Weight not properly on the load cell")
-        print("  2. Wiring issue (especially A+/A- connections)")
-        print("  3. Load cell may be damaged")
-        print("  4. Try swapping the green and white wires on the HX711")
-        lc.cleanup()
-        sys.exit(1)
-
-    # ─── Verify Calibration ───────────────────────────────────
-    print_step(6, "VERIFICATION")
-    print(f"Reading back the {known_weight}g weight to verify accuracy...")
-    print("(Each reading uses full filtering pipeline)\n")
-
-    errors = []
-    weights = []
-    for i in range(10):
-        weight = lc.get_weight(num_samples=50)
-        if weight is not None:
-            weights.append(weight)
-            error = abs(weight - known_weight)
-            error_pct = (error / known_weight) * 100
-            errors.append(error)
-            status = "OK" if error_pct < 2 else "WARN" if error_pct < 5 else "BAD"
-            print(f"  Reading {i+1:2d}: {weight:8.1f}g  "
-                  f"(error: {error:.1f}g / {error_pct:.1f}%)  [{status}]")
-        else:
-            print(f"  Reading {i+1:2d}: failed to read")
-        time.sleep(0.3)
-
-    if errors:
-        avg_error = statistics.mean(errors)
-        max_error = max(errors)
-        avg_error_pct = (avg_error / known_weight) * 100
-
-        if weights:
-            reading_std = statistics.stdev(weights) if len(weights) > 1 else 0
-        else:
-            reading_std = 0
-
-        print(f"\n  --- Verification Summary ---")
-        print(f"  Average error:    {avg_error:.2f}g ({avg_error_pct:.1f}%)")
-        print(f"  Max error:        {max_error:.2f}g")
-        print(f"  Reading std dev:  {reading_std:.2f}g")
-
-        if avg_error_pct < 1:
-            print(f"  Rating:           EXCELLENT")
-        elif avg_error_pct < 2:
-            print(f"  Rating:           GOOD - Suitable for feed dispensing")
-        elif avg_error_pct < 5:
-            print(f"  Rating:           FAIR - Acceptable for most uses")
-        else:
-            print(f"  Rating:           POOR - See tips below")
-            print()
-            print("  TIPS TO IMPROVE ACCURACY:")
-            print("  Hardware:")
-            print("    - Mount load cell firmly on both ends (screws, not tape)")
-            print("    - Keep HX711 away from the servo motor")
-            print("    - Use short wires between load cell and HX711")
-            print("    - Make sure all connections are tight (no loose jumpers)")
-            print("    - Check if RATE pin on HX711 is LOW (10 SPS = less noise)")
-            print("  Software:")
-            print("    - Calibrate with a heavier object (more signal vs noise)")
-            print("    - Re-run this script to try again")
-
-    # ─── Save ─────────────────────────────────────────────────
-    print_step(7, "SAVE CALIBRATION")
-
-    save = input(f"Save calibration to {CALIBRATION_FILE}? (y/n): ").strip().lower()
-    if save == 'y':
-        lc.save_calibration()
-        print("\nCalibration saved! The load_cell module will auto-load it.")
-    else:
-        print(f"\nCalibration NOT saved.")
-        print(f"  Reference unit: {ref_unit:.2f}")
-        print(f"  Set manually later: lc.set_reference_unit({ref_unit:.2f})")
-
-    # ─── Free Testing ─────────────────────────────────────────
-    print_step(8, "FREE TESTING (Optional)")
-    print("Test with different objects. Press Ctrl+C to exit.\n")
-
-    input("Remove the calibration weight, press Enter to tare...")
-    lc.tare(num_samples=80)
-    print()
+    lc = LoadCell(dout_pin=args.dt, sck_pin=args.sck)
 
     try:
+        # ── Step 1: Tare ──────────────────────────────────────────────
+        print("\n── Step 1/5: TARE ──")
+        print("Remove ALL weight from the load cell.")
+        wait_enter("Ready to tare?")
+        lc.tare(samples=args.samples)
+        print(f"   Zero offset = {lc._offset:.1f}")
+
+        # ── Step 2: Calibrate ─────────────────────────────────────────
+        print("\n── Step 2/5: CALIBRATE ──")
+        print(f"Place your {known:.2f} g reference weight on the load cell.")
+        wait_enter("Weight placed?")
+        time.sleep(1.5)   # let the load settle
+        lc.calibrate(known, samples=args.samples)
+        print(f"   Scale ratio = {lc._scale:.4f}  (raw units per gram)")
+
+        # ── Step 3: Verify ────────────────────────────────────────────
+        print("\n── Step 3/5: VERIFY ──")
+        print("Leave the reference weight on the scale.")
+        time.sleep(1.0)
+        measured = lc.get_grams(samples=args.samples)
+        error_g = measured - known
+        error_pct = (error_g / known) * 100
+        print(f"   Measured   : {measured:>8.2f} g")
+        print(f"   Expected   : {known:>8.2f} g")
+        print(f"   Error      : {error_g:>+8.2f} g  ({error_pct:>+.2f}%)")
+
+        # ── Step 4: Fine-tune ─────────────────────────────────────────
+        print("\n── Step 4/5: FINE-TUNE ──")
+        print("Applying one-pass correction to reduce residual error ...")
+        if abs(measured) > 0.01:
+            correction = known / measured
+            lc._scale *= (1.0 / correction)
+            # Re-measure
+            time.sleep(0.5)
+            tuned = lc.get_grams(samples=args.samples)
+            tuned_err = tuned - known
+            tuned_pct = (tuned_err / known) * 100
+            print(f"   Tuned      : {tuned:>8.2f} g")
+            print(f"   Error now  : {tuned_err:>+8.2f} g  ({tuned_pct:>+.2f}%)")
+        else:
+            print("   Already very accurate — no correction needed.")
+
+        # ── Step 5: Multi-point check (optional) ──────────────────────
+        print("\n── Step 5/5: MULTI-POINT CHECK (optional) ──")
+        print("You can test with different weights to check linearity.")
+        print("Type a weight in grams to test, or 'done' to finish.\n")
         while True:
-            input("Place an object and press Enter...")
-            time.sleep(2)  # Let it settle
+            ans = input("   Test weight (grams) or 'done': ").strip().lower()
+            if ans in ("done", "d", "q", "quit", "exit", ""):
+                break
+            try:
+                test_g = float(ans)
+            except ValueError:
+                print("   Enter a number or 'done'.")
+                continue
+            wait_enter(f"Place {test_g:.2f} g on the scale, then press Enter")
+            time.sleep(1.0)
+            m = lc.get_grams(samples=args.samples)
+            e = m - test_g
+            ep = (e / test_g) * 100 if test_g != 0 else 0
+            print(f"   Measured: {m:>8.2f} g | Expected: {test_g:>8.2f} g | Error: {e:>+.2f} g ({ep:>+.2f}%)")
 
-            print("Reading weight (stabilizing)...")
-            stable = lc.get_stable_weight(
-                num_passes=5,
-                stability_threshold=2.0,
-                timeout=12
-            )
-            if stable is not None:
-                print(f"\n  >>> Weight: {stable:.1f} grams <<<\n")
-            else:
-                w = lc.get_weight(num_samples=60)
-                if w is not None:
-                    print(f"\n  >>> Weight: {w:.1f} grams <<<\n")
-                else:
-                    print("\n  Could not read weight.\n")
+        # ── Save ──────────────────────────────────────────────────────
+        lc.save_calibration()
+        print("\nCalibration complete!  You can now run:")
+        print("   python load_cell.py          # continuous grams")
+        print("   python load_cell.py --once   # single reading")
+
     except KeyboardInterrupt:
-        print("\n\nCalibration session complete!")
-
-    lc.cleanup()
-    print("Done.")
+        print("\n\nCalibration cancelled.")
+    finally:
+        lc.close()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nCalibration cancelled by user.")
-        GPIO.cleanup()
-    except Exception as e:
-        print(f"\nFatal error: {e}")
-        import traceback
-        traceback.print_exc()
-        GPIO.cleanup()
-        sys.exit(1)
+    main()
