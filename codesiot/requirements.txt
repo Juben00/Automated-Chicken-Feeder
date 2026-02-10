@@ -2,3 +2,4 @@ flask
 requests
 pigpio
 opencv-python
+RPi.GPIO

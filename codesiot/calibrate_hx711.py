@@ -14,7 +14,7 @@ Usage:
     python calibrate_hx711.py --known-grams 100
     python calibrate_hx711.py --known-grams 200 --samples 30
 
-Requires: pigpio daemon running  ->  sudo pigpiod
+Tip: Run  python load_cell.py --debug  first to verify HX711 wiring.
 """
 
 from __future__ import annotations
