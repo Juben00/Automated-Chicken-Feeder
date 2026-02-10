@@ -1,22 +1,10 @@
 from hx711 import HX711
-import time
+import RPi.GPIO as GPIO
 
-hx = HX711(5, 6)
+GPIO.setmode(GPIO.BCM)
 
-hx.set_reading_format("MSB", "MSB")
-hx.set_reference_unit(1)
-hx.reset()
-hx.tare()
+hx = HX711(dout_pin=5, pd_sck_pin=6)
 
-print("HX711 ready")
-
-try:
-    while True:
-        value = hx.get_weight(5)
-        print("Raw-ish value:", value)
-        hx.power_down()
-        hx.power_up()
-        time.sleep(0.5)
-
-except KeyboardInterrupt:
-    print("Stopped")
+while True:
+    print(hx.get_raw_data_mean())
+    
