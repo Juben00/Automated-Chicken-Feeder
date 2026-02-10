@@ -78,10 +78,10 @@ def main() -> None:
         lc.calibrate(known, samples=args.samples)
         print(f"   Scale ratio = {lc._scale:.4f}  (raw units per gram)")
 
-        # ── Step 3: Verify ────────────────────────────────────────────
-        print("\n── Step 3/5: VERIFY ──")
+        # ── Step 3: Verify + Fine-tune ────────────────────────────────
+        print("\n── Step 3/4: VERIFY & FINE-TUNE ──")
         print("Leave the reference weight on the scale.")
-        time.sleep(1.0)
+        time.sleep(1.5)
         measured = lc.get_grams(samples=args.samples)
         error_g = measured - known
         error_pct = (error_g / known) * 100
@@ -89,41 +89,33 @@ def main() -> None:
         print(f"   Expected   : {known:>8.2f} g")
         print(f"   Error      : {error_g:>+8.2f} g  ({error_pct:>+.2f}%)")
 
-        # ── Step 4: Fine-tune ─────────────────────────────────────────
-        print("\n── Step 4/5: FINE-TUNE ──")
-        print("Applying one-pass correction to reduce residual error ...")
-        if abs(measured) > 0.01:
-            correction = known / measured
-            lc._scale *= (1.0 / correction)
-            # Re-measure
-            time.sleep(0.5)
-            tuned = lc.get_grams(samples=args.samples)
-            tuned_err = tuned - known
-            tuned_pct = (tuned_err / known) * 100
-            print(f"   Tuned      : {tuned:>8.2f} g")
-            print(f"   Error now  : {tuned_err:>+8.2f} g  ({tuned_pct:>+.2f}%)")
+        # Apply correction mathematically (do NOT re-read — raw values drift)
+        if abs(measured) > 0.01 and abs(error_pct) > 0.5:
+            # Adjust scale so that the SAME raw reading would produce exactly known_grams
+            lc._scale *= (measured / known)
+            print(f"   Corrected scale ratio: {lc._scale:.4f}")
+            print(f"   (mathematically adjusted — same reading now maps to {known:.2f} g)")
         else:
-            print("   Already very accurate — no correction needed.")
+            print("   Already accurate — no correction needed.")
 
-        # ── Step 5: Multi-point check (optional) ──────────────────────
-        print("\n── Step 5/5: MULTI-POINT CHECK (optional) ──")
-        print("You can test with different weights to check linearity.")
-        print("Type a weight in grams to test, or 'done' to finish.\n")
-        while True:
-            ans = input("   Test weight (grams) or 'done': ").strip().lower()
-            if ans in ("done", "d", "q", "quit", "exit", ""):
-                break
-            try:
-                test_g = float(ans)
-            except ValueError:
-                print("   Enter a number or 'done'.")
-                continue
-            wait_enter(f"Place {test_g:.2f} g on the scale, then press Enter")
-            time.sleep(1.0)
-            m = lc.get_grams(samples=args.samples)
-            e = m - test_g
-            ep = (e / test_g) * 100 if test_g != 0 else 0
-            print(f"   Measured: {m:>8.2f} g | Expected: {test_g:>8.2f} g | Error: {e:>+.2f} g ({ep:>+.2f}%)")
+        # ── Step 4: Fresh verification ────────────────────────────────
+        print("\n── Step 4/4: FRESH VERIFICATION ──")
+        print("Remove the weight, wait 3 seconds, then place it back.")
+        wait_enter("Weight back on the scale?")
+        time.sleep(2.0)
+
+        # Quick re-tare check: see if zero has drifted
+        verify = lc.get_grams(samples=args.samples)
+        v_err = verify - known
+        v_pct = (v_err / known) * 100
+        print(f"   Measured   : {verify:>8.2f} g")
+        print(f"   Expected   : {known:>8.2f} g")
+        print(f"   Error      : {v_err:>+8.2f} g  ({v_pct:>+.2f}%)")
+        if abs(v_pct) > 10:
+            print("\n   [!] Error is still large (>10%).")
+            print("   This usually means the load cell is not mounted properly.")
+            print("   Make sure one end is fixed (screwed down) and weight")
+            print("   is on the free end.  Then re-run calibration.")
 
         # ── Save ──────────────────────────────────────────────────────
         lc.save_calibration()

@@ -372,10 +372,10 @@ def _cli() -> None:
                         help="HX711 DT pin in BCM (default: 5 = physical pin 29)")
     parser.add_argument("--sck", type=int, default=DEFAULT_SCK_PIN,
                         help="HX711 SCK pin in BCM (default: 6 = physical pin 31)")
-    parser.add_argument("--samples", type=int, default=15,
-                        help="Samples per averaged reading (default: 15)")
-    parser.add_argument("--interval", type=float, default=0.5,
-                        help="Seconds between readings (default: 0.5)")
+    parser.add_argument("--samples", type=int, default=5,
+                        help="Samples per averaged reading (default: 5)")
+    parser.add_argument("--interval", type=float, default=0.03,
+                        help="Seconds between readings (default: 0.03)")
     parser.add_argument("--raw", action="store_true",
                         help="Show raw ADC values instead of grams")
     parser.add_argument("--once", action="store_true",
