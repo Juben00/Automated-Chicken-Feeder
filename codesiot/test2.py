@@ -1,19 +1,22 @@
-from hx711 import HX711
+from load_cell import HX711
 import time
 
-hx = HX711(5, 6)
+hx = HX711(dout_pin=5, sck_pin=6)
 
-hx.set_reading_format("MSB", "MSB")
-hx.set_reference_unit(1)
-hx.reset()
-hx.tare()
+print("HX711 ready – raw readings")
+print("Press Ctrl+C to stop.\n")
 
-print("Place known weight (e.g. 500g)")
-time.sleep(5)
+hx.zero()
 
-value = hx.get_weight(10)
-known_weight = 500  # grams
+input('place known weight on scale:')
+reading = hx.get_data_mean(readings=100)
 
-reference_unit = value / known_weight
+known_weight_grams = input('enter known weight')
+value = float(known_weight_grams)
 
-print("Reference unit:", reference_unit)
+ ration = reading/value
+ hx.set_scale_ratio(ratio)
+
+ while True:
+    weight = hx.get_weight_mean()
+    print(weight)
