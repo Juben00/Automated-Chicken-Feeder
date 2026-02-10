@@ -1,10 +1,17 @@
-from hx711 import HX711
-import RPi.GPIO as GPIO
+from load_cell import HX711
+import time
 
-GPIO.setmode(GPIO.BCM)
+hx = HX711(dout_pin=5, sck_pin=6)
 
-hx = HX711(dout_pin=5, pd_sck_pin=6)
+print("HX711 ready – raw readings")
+print("Press Ctrl+C to stop.\n")
 
-while True:
-    print(hx.get_raw_data_mean())
-    
+try:
+    while True:
+        raw = hx.read_raw_average(samples=5)
+        print(f"Raw: {raw:.1f}")
+        time.sleep(0.5)
+except KeyboardInterrupt:
+    print("\nStopped")
+finally:
+    hx.cleanup()
