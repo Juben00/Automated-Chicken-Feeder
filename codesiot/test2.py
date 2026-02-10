@@ -1,22 +1,31 @@
-from load_cell import HX711
+from load_cell import LoadCell
 import time
 
-hx = HX711(dout_pin=5, sck_pin=6)
+lc = LoadCell(dout_pin=5, sck_pin=6)
 
-print("HX711 ready – raw readings")
+print("HX711 Calibration Test")
 print("Press Ctrl+C to stop.\n")
 
-hx.zero()
+input("Remove all weight from the scale, then press Enter...")
+lc.tare()
 
-input('place known weight on scale:')
-reading = hx.get_data_mean(readings=100)
+input("Place known weight on scale, then press Enter...")
+time.sleep(1.5)
 
-known_weight_grams = input('enter known weight')
+known_weight_grams = input("Enter known weight in grams: ")
 value = float(known_weight_grams)
 
- ration = reading/value
- hx.set_scale_ratio(ratio)
+lc.calibrate(value)
+lc.save_calibration()
 
- while True:
-    weight = hx.get_weight_mean()
-    print(weight)
+print(f"\nCalibrated for {value}g. Reading weight...\n")
+
+try:
+    while True:
+        weight = lc.get_grams()
+        print(f"{weight:.2f} g")
+        time.sleep(0.5)
+except KeyboardInterrupt:
+    print("\nStopped")
+finally:
+    lc.close()
