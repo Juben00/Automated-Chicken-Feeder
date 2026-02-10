@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO
 import time
+import statistics
 from hx711 import HX711
 
 GPIO.setmode(GPIO.BCM)
@@ -10,33 +11,49 @@ hx.reset()
 print("HX711 Calibration Test")
 print("Press Ctrl+C to stop.\n")
 
-try:
-    input("Remove all weight from the scale, then press Enter...")
-    hx.zero()
-    print("Tare complete.\n")
 
+def read_mean(num=30):
+    """Read num samples and return the mean."""
+    data = hx.get_raw_data(num_measures=num)
+    if data:
+        return statistics.mean(data)
+    return None
+
+
+try:
+    # Step 1: Tare
+    input("Remove all weight from the scale, then press Enter...")
+    offset = read_mean(30)
+    if offset is None:
+        print("Error reading HX711. Check wiring.")
+        raise SystemExit
+    print(f"Tare complete. Offset: {offset:.1f}\n")
+
+    # Step 2: Calibrate
     input("Place known weight on scale, then press Enter...")
     time.sleep(1.5)
 
-    reading = hx.get_data_mean(readings=30)
-    if reading is False:
-        print("Error: could not read data from HX711.")
-    else:
-        known_weight_grams = input("Enter known weight in grams: ")
-        value = float(known_weight_grams)
+    known_weight_grams = input("Enter known weight in grams: ")
+    value = float(known_weight_grams)
 
-        ratio = reading / value
-        hx.set_scale_ratio(ratio)
-        print(f"Scale ratio set to: {ratio:.4f}\n")
+    raw_with_weight = read_mean(30)
+    if raw_with_weight is None:
+        print("Error reading HX711.")
+        raise SystemExit
 
-        print("Reading weight...\n")
-        while True:
-            weight = hx.get_weight_mean(readings=15)
-            if weight is not False:
-                print(f"{weight:.2f} g")
-            else:
-                print("Error reading")
-            time.sleep(0.5)
+    ratio = (raw_with_weight - offset) / value
+    print(f"Scale ratio: {ratio:.4f}\n")
+
+    # Step 3: Read weight continuously
+    print("Reading weight...\n")
+    while True:
+        raw = read_mean(15)
+        if raw is not None:
+            grams = (raw - offset) / ratio
+            print(f"{grams:.2f} g")
+        else:
+            print("Error reading")
+        time.sleep(0.5)
 
 except KeyboardInterrupt:
     print("\nStopped")

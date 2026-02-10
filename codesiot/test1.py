@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO
 import time
+import statistics
 from hx711 import HX711
 
 GPIO.setmode(GPIO.BCM)
@@ -12,9 +13,10 @@ print("Press Ctrl+C to stop.\n")
 
 try:
     while True:
-        raw = hx.get_raw_data_mean(readings=5)
-        if raw is not False:
-            print(f"Raw: {raw}")
+        data = hx.get_raw_data(num_measures=5)
+        if data:
+            avg = statistics.mean(data)
+            print(f"Raw: {avg:.1f}")
         else:
             print("Error reading")
         time.sleep(0.5)
