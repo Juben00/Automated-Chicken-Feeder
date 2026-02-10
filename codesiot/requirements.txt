@@ -3,3 +3,4 @@ requests
 pigpio
 opencv-python
 hx711
+RPi.GPIO
