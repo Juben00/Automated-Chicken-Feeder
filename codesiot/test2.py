@@ -14,8 +14,9 @@ print("Press Ctrl+C to stop.\n")
 try:
     # Step 1: Tare
     input("Remove all weight from the scale, then press Enter...")
-    hx.tare(times=30)
-    print(f"Tare complete. Offset: {hx.get_offset():.1f}\n")
+    offset = hx.read_average(times=30)
+    hx.set_offset(offset)
+    print(f"Tare complete. Offset: {offset:.1f}\n")
 
     # Step 2: Calibrate
     input("Place known weight on scale, then press Enter...")
@@ -24,8 +25,8 @@ try:
     known_weight_grams = input("Enter known weight in grams: ")
     value = float(known_weight_grams)
 
-    # Read raw minus offset, then compute reference unit
-    reading = hx.get_value(times=30)
+    raw_with_weight = hx.read_average(times=30)
+    reading = raw_with_weight - offset
     reference_unit = reading / value
     hx.set_reference_unit(reference_unit)
     print(f"Reference unit: {reference_unit:.4f}\n")
@@ -33,8 +34,9 @@ try:
     # Step 3: Read weight continuously
     print("Reading weight...\n")
     while True:
-        weight = hx.get_weight(times=5)
-        print(f"{weight:.2f} g")
+        raw = hx.read_average(times=5)
+        grams = (raw - offset) / reference_unit
+        print(f"{grams:.2f} g")
         hx.power_down()
         hx.power_up()
         time.sleep(0.3)
