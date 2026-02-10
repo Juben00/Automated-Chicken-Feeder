@@ -71,6 +71,12 @@ class LoadCell:
             # tatobari's hx711py uses positional args: HX711(dout, pd_sck, gain)
             self.hx = HX711(dout_pin, pd_sck_pin, gain)
             self.hx.set_reading_format("MSB", "MSB")
+
+            # Fix Python 3 bug in tatobari's hx711py: read_median() uses
+            # float division (/) instead of integer division (//) for slice
+            # indices, causing "slice indices must be integers" errors.
+            self._patch_hx711_read_median()
+
             self.hx.reset()
             time.sleep(0.2)
             print(f"[LoadCell] Initialized on DT=GPIO{dout_pin}, SCK=GPIO{pd_sck_pin}")
@@ -85,6 +91,34 @@ class LoadCell:
         # Try to load saved calibration
         if os.path.exists(CALIBRATION_FILE):
             self.load_calibration()
+
+    def _patch_hx711_read_median(self):
+        """
+        Monkey-patch the read_median method in tatobari's hx711py to fix
+        a Python 3 incompatibility: len(valueList) / 2 returns a float,
+        but it's used as a slice index which requires an int.
+        """
+        hx = self.hx
+
+        def fixed_read_median(times=3):
+            if times <= 0:
+                raise ValueError("HX711::read_median(): times must be greater than zero!")
+            if times == 1:
+                return hx.read_long()
+            valueList = []
+            for x in range(times):
+                valueList.append(hx.read_long())
+            valueList.sort()
+            # Odd number of samples: take the centre value
+            if (times & 0x1) == 0x1:
+                return valueList[len(valueList) // 2]
+            else:
+                # Even number: average the two middle values
+                # FIX: use // (integer division) instead of / (float division)
+                midpoint = len(valueList) // 2
+                return sum(valueList[midpoint:midpoint + 2]) / 2.0
+
+        hx.read_median = fixed_read_median
 
     def tare(self, times=15):
         """
