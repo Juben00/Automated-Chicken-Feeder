@@ -12,7 +12,7 @@ What you need:
 How it works:
     1. Takes a zero reading with nothing on the scale (tare)
     2. Takes a reading with your known weight on the scale
-    3. Calculates the scale ratio (raw units per gram)
+    3. Calculates the reference unit (raw units per gram)
     4. Verifies accuracy by reading the known weight back
     5. Saves calibration to calibration.json for future use
 
@@ -72,10 +72,10 @@ def main():
     print("gram measurements. Follow each step carefully.")
     print()
     print("Pin Configuration:")
-    print("  DT (Data)  -> GPIO 5  (Physical Pin 29)")
+    print("  DT (Data)   -> GPIO 5  (Physical Pin 29)")
     print("  SCK (Clock) -> GPIO 6  (Physical Pin 31)")
-    print("  VCC        -> 3.3V    (Physical Pin 1)")
-    print("  GND        -> Ground  (Physical Pin 9)")
+    print("  VCC         -> 3.3V    (Physical Pin 1)")
+    print("  GND         -> Ground  (Physical Pin 9)")
 
     # ─── Initialize ────────────────────────────────────────────
     print_step(1, "INITIALIZATION")
@@ -101,7 +101,7 @@ def main():
     print()
 
     for i in range(5):
-        raw = lc.get_raw_value(readings=10)
+        raw = lc.read_raw_no_offset(times=5)
         if raw is not None:
             print(f"  Warm-up {i+1}/5: {raw:.0f}")
         else:
@@ -118,9 +118,9 @@ def main():
     input("Press Enter when the load cell is empty...")
 
     print("\nZeroing the scale (this takes a few seconds)...")
-    success = lc.tare(readings=50)
+    tare_val = lc.tare(times=30)
 
-    if not success:
+    if tare_val is None:
         print("\nWARNING: Tare may not be accurate. Possible issues:")
         print("  - Load cell is not stable (vibrations, wind)")
         print("  - Wiring issue (check connections)")
@@ -134,7 +134,7 @@ def main():
     print("\nVerifying zero point...")
     tare_readings = []
     for i in range(5):
-        raw = lc.get_raw_value(readings=20)
+        raw = lc.get_raw_value(times=10)
         if raw is not None:
             tare_readings.append(raw)
             print(f"  Zero check {i+1}: {raw:.0f}")
@@ -145,7 +145,7 @@ def main():
         avg = sum(tare_readings) / len(tare_readings)
         print(f"\n  Average: {avg:.0f}")
         print(f"  Spread:  {spread:.0f} (lower is better)")
-        if spread > abs(avg * 0.1) and avg != 0:
+        if spread > abs(avg * 0.1) + 100:
             print("  NOTE: Readings have some variation. This is normal for")
             print("        sensitive load cells. Averaging compensates for this.")
 
@@ -173,13 +173,13 @@ def main():
     print("\nWaiting for load cell to settle...")
     time.sleep(2)
 
-    # ─── Calculate Scale Ratio ────────────────────────────────
+    # ─── Calculate Reference Unit ─────────────────────────────
     print_step(5, "CALCULATING CALIBRATION FACTOR")
     print(f"Taking readings with {known_weight}g on the scale...")
 
-    ratio = lc.calibrate(known_weight, readings=80)
+    ref_unit = lc.calibrate(known_weight, times=50)
 
-    if ratio is None:
+    if ref_unit is None:
         print("\nERROR: Calibration failed.")
         print("Possible causes:")
         print("  1. Weight not properly on the load cell")
@@ -195,7 +195,7 @@ def main():
 
     errors = []
     for i in range(10):
-        weight = lc.get_weight(readings=30)
+        weight = lc.get_weight(times=15)
         if weight is not None:
             error = abs(weight - known_weight)
             error_pct = (error / known_weight) * 100
@@ -237,9 +237,9 @@ def main():
         print("\nCalibration saved! The load_cell module will auto-load it.")
     else:
         print(f"\nCalibration NOT saved.")
-        print(f"  Scale ratio: {ratio:.2f}")
+        print(f"  Reference unit: {ref_unit:.2f}")
         print(f"  You can manually set this later with:")
-        print(f"    lc.set_scale_ratio({ratio:.2f})")
+        print(f"    lc.set_reference_unit({ref_unit:.2f})")
 
     # ─── Additional Test ──────────────────────────────────────
     print_step(8, "ADDITIONAL TESTING (Optional)")
@@ -247,7 +247,7 @@ def main():
     print("Press Ctrl+C to exit.\n")
 
     input("Remove the calibration weight, then press Enter to tare...")
-    lc.tare(readings=30)
+    lc.tare(times=15)
     print()
 
     try:
@@ -265,7 +265,7 @@ def main():
                 print(f"\n  >>> Weight: {stable_weight:.1f} grams <<<\n")
             else:
                 # Fall back to regular reading
-                weight = lc.get_weight(readings=40)
+                weight = lc.get_weight(times=20)
                 if weight is not None:
                     print(f"\n  >>> Weight: {weight:.1f} grams <<<\n")
                 else:

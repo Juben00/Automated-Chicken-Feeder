@@ -2,6 +2,7 @@
 load_cell.py - HX711 Load Cell Module for Chicken Feeder
 =========================================================
 Reusable module for reading weight from an HX711 load cell amplifier.
+Compatible with tatobari's hx711py library.
 
 Wiring (HX711 -> Raspberry Pi 3):
     VCC  -> Pin 1  (3.3V)
@@ -40,7 +41,7 @@ HX711_SCK_PIN = 6     # Clock pin (Physical Pin 31)
 # ==============================================================
 # Default Settings
 # ==============================================================
-DEFAULT_READINGS = 30          # Number of readings to average
+DEFAULT_READINGS = 15          # Number of readings to average
 CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
 
 
@@ -52,26 +53,26 @@ class LoadCell:
     with built-in noise filtering and stability checks.
     """
 
-    def __init__(self, dout_pin=HX711_DT_PIN, pd_sck_pin=HX711_SCK_PIN,
-                 channel='A', gain=128):
+    def __init__(self, dout_pin=HX711_DT_PIN, pd_sck_pin=HX711_SCK_PIN, gain=128):
         """
         Initialize the HX711 load cell amplifier.
 
         Args:
-            dout_pin:  BCM GPIO pin connected to HX711 DT (data).
+            dout_pin:   BCM GPIO pin connected to HX711 DT (data).
             pd_sck_pin: BCM GPIO pin connected to HX711 SCK (clock).
-            channel:   'A' or 'B'. Channel A supports gain 64/128.
-            gain:      Amplifier gain (128 or 64 for channel A, 32 for channel B).
+            gain:       Amplifier gain (128 or 64 for channel A, 32 for channel B).
         """
         self.dout_pin = dout_pin
         self.pd_sck_pin = pd_sck_pin
-        self._scale_ratio = None
-        self._offset = 0
+        self._reference_unit = 1
+        self._calibrated = False
 
         try:
-            self.hx = HX711(dout_pin=dout_pin, pd_sck_pin=pd_sck_pin)
+            # tatobari's hx711py uses positional args: HX711(dout, pd_sck, gain)
+            self.hx = HX711(dout_pin, pd_sck_pin, gain)
+            self.hx.set_reading_format("MSB", "MSB")
             self.hx.reset()
-            time.sleep(0.1)
+            time.sleep(0.2)
             print(f"[LoadCell] Initialized on DT=GPIO{dout_pin}, SCK=GPIO{pd_sck_pin}")
         except Exception as e:
             raise RuntimeError(
@@ -85,69 +86,80 @@ class LoadCell:
         if os.path.exists(CALIBRATION_FILE):
             self.load_calibration()
 
-    def tare(self, readings=DEFAULT_READINGS):
+    def tare(self, times=15):
         """
         Zero/tare the scale. Call with nothing on the load cell.
 
         Args:
-            readings: Number of readings to average for the zero point.
+            times: Number of readings to average for the zero point.
 
         Returns:
-            True if tare was successful, False otherwise.
+            The tare offset value.
         """
-        print(f"[LoadCell] Taring... (averaging {readings} readings)")
+        print(f"[LoadCell] Taring... (averaging {times} readings)")
         try:
-            result = self.hx.zero(readings)
-            if result is False:
-                print("[LoadCell] WARNING: Tare returned False - readings may be unstable.")
-                print("           Check wiring and ensure nothing is on the scale.")
-                return False
-            self._offset = self.hx.get_raw_data_mean(readings=readings)
-            print(f"[LoadCell] Tare complete. Zero offset set.")
-            return True
+            # set_reference_unit to 1 so tare reads raw values
+            self.hx.set_reference_unit(1)
+            val = self.hx.tare(times)
+            # restore reference unit after tare
+            if self._calibrated:
+                self.hx.set_reference_unit(self._reference_unit)
+            print(f"[LoadCell] Tare complete. Offset: {val}")
+            return val
         except Exception as e:
             print(f"[LoadCell] Tare error: {e}")
-            return False
+            return None
 
-    def get_raw_value(self, readings=DEFAULT_READINGS):
+    def get_raw_value(self, times=DEFAULT_READINGS):
         """
         Get the raw ADC value from the HX711 (after tare offset).
 
         Args:
-            readings: Number of readings to average.
+            times: Number of readings to average.
 
         Returns:
             Mean raw value (float), or None on error.
         """
         try:
-            value = self.hx.get_raw_data_mean(readings=readings)
-            if value is False:
-                print("[LoadCell] WARNING: Could not get raw data.")
-                return None
+            value = self.hx.get_value(times)
             return value
         except Exception as e:
             print(f"[LoadCell] Raw read error: {e}")
             return None
 
-    def get_weight(self, readings=DEFAULT_READINGS):
+    def read_raw_no_offset(self, times=DEFAULT_READINGS):
+        """
+        Get the absolute raw ADC value (ignoring tare offset).
+
+        Args:
+            times: Number of readings to average.
+
+        Returns:
+            Mean raw value (float), or None on error.
+        """
+        try:
+            value = self.hx.read_average(times)
+            return value
+        except Exception as e:
+            print(f"[LoadCell] Raw read error: {e}")
+            return None
+
+    def get_weight(self, times=DEFAULT_READINGS):
         """
         Get weight in grams. Requires prior calibration.
 
         Args:
-            readings: Number of readings to average for better accuracy.
+            times: Number of readings to average for better accuracy.
 
         Returns:
             Weight in grams (float), or None if not calibrated / error.
         """
-        if self._scale_ratio is None:
+        if not self._calibrated:
             print("[LoadCell] ERROR: Not calibrated. Run calibrate_hx711.py first.")
             return None
 
         try:
-            weight = self.hx.get_weight_mean(readings=readings)
-            if weight is False:
-                print("[LoadCell] WARNING: Could not get weight data.")
-                return None
+            weight = self.hx.get_weight(times)
             return round(weight, 1)
         except Exception as e:
             print(f"[LoadCell] Weight read error: {e}")
@@ -167,7 +179,7 @@ class LoadCell:
         Returns:
             Stable weight in grams (float), or best estimate on timeout.
         """
-        if self._scale_ratio is None:
+        if not self._calibrated:
             print("[LoadCell] ERROR: Not calibrated.")
             return None
 
@@ -175,7 +187,7 @@ class LoadCell:
         start = time.time()
 
         while time.time() - start < timeout:
-            w = self.get_weight(readings=20)
+            w = self.get_weight(times=10)
             if w is None:
                 continue
 
@@ -193,13 +205,15 @@ class LoadCell:
 
         # Timeout - return best estimate from last readings
         if readings:
-            avg = sum(readings[-5:]) / min(len(readings), 5)
+            last_few = readings[-5:] if len(readings) >= 5 else readings
+            avg = sum(last_few) / len(last_few)
+            spread = max(last_few) - min(last_few)
             print(f"[LoadCell] Stability timeout. Best estimate: {avg:.1f}g "
-                  f"(spread: {max(readings[-5:]) - min(readings[-5:]):.2f}g)")
+                  f"(spread: {spread:.2f}g)")
             return round(avg, 1)
         return None
 
-    def calibrate(self, known_weight_grams, readings=50):
+    def calibrate(self, known_weight_grams, times=50):
         """
         Calibrate the scale using a known weight.
 
@@ -210,43 +224,45 @@ class LoadCell:
 
         Args:
             known_weight_grams: The exact weight of your calibration object (grams).
-            readings: Number of readings to average for calibration.
+            times: Number of readings to average for calibration.
 
         Returns:
-            The scale ratio (float) if successful, None otherwise.
+            The reference unit (float) if successful, None otherwise.
         """
         print(f"[LoadCell] Calibrating with {known_weight_grams}g reference weight...")
-        print(f"[LoadCell] Taking {readings} readings...")
+        print(f"[LoadCell] Taking {times} readings...")
 
-        raw_value = self.hx.get_data_mean(readings=readings)
-        if raw_value is False:
-            print("[LoadCell] ERROR: Could not get stable readings for calibration.")
-            return None
+        # Read raw value (offset already subtracted by get_value)
+        # With reference_unit=1, get_value returns raw - offset
+        self.hx.set_reference_unit(1)
+        raw_value = self.hx.get_value(times)
 
         if raw_value == 0:
             print("[LoadCell] ERROR: Raw value is 0. Check wiring and load cell.")
             return None
 
-        # scale_ratio = raw_value_per_gram
-        self._scale_ratio = raw_value / known_weight_grams
-        self.hx.set_scale_ratio(self._scale_ratio)
+        # reference_unit = raw_value_per_gram
+        self._reference_unit = raw_value / known_weight_grams
+        self.hx.set_reference_unit(self._reference_unit)
+        self._calibrated = True
 
         print(f"[LoadCell] Calibration complete!")
-        print(f"  Raw value with {known_weight_grams}g: {raw_value}")
-        print(f"  Scale ratio: {self._scale_ratio:.2f} units/gram")
+        print(f"  Raw value with {known_weight_grams}g: {raw_value:.0f}")
+        print(f"  Reference unit: {self._reference_unit:.2f}")
 
-        return self._scale_ratio
+        return self._reference_unit
 
-    def set_scale_ratio(self, ratio):
+    def set_reference_unit(self, ref_unit):
         """
-        Manually set the scale ratio (units per gram).
+        Manually set the reference unit (raw units per gram).
 
         Args:
-            ratio: The scale ratio from a previous calibration.
+            ref_unit: The reference unit from a previous calibration.
         """
-        self._scale_ratio = ratio
-        self.hx.set_scale_ratio(ratio)
-        print(f"[LoadCell] Scale ratio set to {ratio:.2f}")
+        self._reference_unit = ref_unit
+        self.hx.set_reference_unit(ref_unit)
+        self._calibrated = True
+        print(f"[LoadCell] Reference unit set to {ref_unit:.2f}")
 
     def save_calibration(self, filepath=None):
         """
@@ -258,12 +274,12 @@ class LoadCell:
         if filepath is None:
             filepath = CALIBRATION_FILE
 
-        if self._scale_ratio is None:
+        if not self._calibrated:
             print("[LoadCell] WARNING: No calibration data to save.")
             return False
 
         data = {
-            "scale_ratio": self._scale_ratio,
+            "reference_unit": self._reference_unit,
             "dout_pin": self.dout_pin,
             "pd_sck_pin": self.pd_sck_pin,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -296,10 +312,11 @@ class LoadCell:
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
-            self._scale_ratio = data["scale_ratio"]
-            self.hx.set_scale_ratio(self._scale_ratio)
+            self._reference_unit = data["reference_unit"]
+            self.hx.set_reference_unit(self._reference_unit)
+            self._calibrated = True
             print(f"[LoadCell] Calibration loaded from {filepath}")
-            print(f"  Scale ratio: {self._scale_ratio:.2f}")
+            print(f"  Reference unit: {self._reference_unit:.2f}")
             print(f"  Calibrated on: {data.get('timestamp', 'unknown')}")
             return True
         except FileNotFoundError:
@@ -311,7 +328,15 @@ class LoadCell:
 
     def is_calibrated(self):
         """Check if the scale has been calibrated."""
-        return self._scale_ratio is not None
+        return self._calibrated
+
+    def power_down(self):
+        """Power down the HX711 to save energy."""
+        self.hx.power_down()
+
+    def power_up(self):
+        """Power up the HX711."""
+        self.hx.power_up()
 
     def cleanup(self):
         """Clean up GPIO resources."""
