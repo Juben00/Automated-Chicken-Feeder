@@ -46,9 +46,8 @@ UPLOAD_ENDPOINT = config["upload_endpoint"]
 DEVICE_ID = config["device_id"]
 USER_TOKEN = config["user_token"]
 
-# Default grams per servo drop (can be overridden by server response)
-# 1 rotation (0→175 or 175→0) dispenses 234 pellets = 6.7 grams
-DEFAULT_GRAMS_PER_DROP = 6.7
+# Default grams per servo drop (fallback only — server always sends the live value)
+DEFAULT_GRAMS_PER_DROP = 6.0
 
 @app.route('/')
 def home():
@@ -105,8 +104,8 @@ def feed_cycle():
                 except (ValueError, TypeError):
                     grams_per_drop = DEFAULT_GRAMS_PER_DROP
 
-                # Only dispense if >= one drop worth
-                if grams_to_dispense >= grams_per_drop:
+                # Dispense if any amount is needed (rounds up to at least 1 drop)
+                if grams_to_dispense > 0:
                     # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
                     # Round UP - always overfeed slightly rather than underfeed
                     num_drops = math.ceil(grams_to_dispense / grams_per_drop)
@@ -140,7 +139,7 @@ def feed_cycle():
                     
                     return jsonify({"status": "success", "dispensed": actual_dispensed, "drops": num_drops, "grams_per_drop": grams_per_drop, "response": result})
                 else:
-                    print(f"Requested {grams_to_dispense}g is less than one drop ({grams_per_drop}g). No dispensing.")
+                    print(f"No feed needed (grams_to_dispense={grams_to_dispense}). Skipping.")
                     return jsonify({"status": "no_dispense", "response": result})
             else:
                 return jsonify({"status": "failed", "error": res.text}), 500
@@ -173,8 +172,8 @@ def dispense_route():
         except (ValueError, TypeError):
             grams_per_drop = DEFAULT_GRAMS_PER_DROP
 
-        if amount < grams_per_drop or amount > 150:
-            return jsonify({'error': f'Amount must be between {grams_per_drop} and 150 grams'}), 400
+        if amount < 1 or amount > 150:
+            return jsonify({'error': 'Amount must be between 1 and 150 grams'}), 400
 
         # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
         # Round UP - always overfeed slightly rather than underfeed

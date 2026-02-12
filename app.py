@@ -133,8 +133,13 @@ def communicate_with_iot_device(amount_grams, device_url=None):
         else:
             endpoint = f"http://{device_url}:5000/dispense"
 
-        # Prepare the payload
-        payload = {'amount_grams': amount_grams}
+        # Prepare the payload — include current grams_per_drop so IoT uses live config
+        from utils.model_utils import get_feed_ratio
+        feed_config = get_feed_ratio()
+        payload = {
+            'amount_grams': amount_grams,
+            'grams_per_drop': feed_config.get('grams_per_drop', 6.7)
+        }
 
         # Send request with timeout
         # logger.info(f"Sending dispense request to {endpoint} for {amount_grams}g")
@@ -283,8 +288,10 @@ def scheduled_feed_task(schedule_id):
                     grams_dispensed = result.get('dispensed') if isinstance(result, dict) else dispensed_val
                     
                     # Log successful dispense
+                    # amount_grams = the SCHEDULED amount (what was requested)
+                    # grams_dispensed = the ACTUAL amount the servo dispensed
                     log_entry = DispenseLog(
-                        amount_grams=dispensed_val,
+                        amount_grams=schedule.amount_grams,
                         trigger_type='scheduled',
                         schedule_id=schedule_id,
                         status='success',
