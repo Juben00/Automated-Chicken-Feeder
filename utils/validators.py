@@ -182,7 +182,7 @@ def validate_schedule_name(name: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def validate_amount_grams(amount: int, min_grams: int = 5, max_grams: int = 150) -> Tuple[bool, Optional[str]]:
+def validate_amount_grams(amount: int, min_grams: float = 6.7, max_grams: int = 150) -> Tuple[bool, Optional[str]]:
     """
     Validate feed amount in grams.
     

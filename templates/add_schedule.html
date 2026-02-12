@@ -34,11 +34,11 @@
                             <label for="amount_grams" class="form-label">Amount (grams)</label>
                             <div class="input-group">
                                 <input type="number" class="form-control" id="amount_grams" name="amount_grams" 
-                                    min="5" max="150" value="30" required>
+                                    min="{{ min_grams }}" max="150" value="30" step="0.1" required>
                                 <span class="input-group-text">grams</span>
                             </div>
                             <div class="form-text">
-                                Amount of feed to dispense (5-150 grams)
+                                Amount of feed to dispense ({{ min_grams }}-150 grams)
                             </div>
                         </div>
                         
@@ -195,7 +195,7 @@ function applyTemplate(name, time, amount) {
 // Form validation
 document.getElementById('schedule-form').addEventListener('submit', function(e) {
     const amount = document.getElementById('amount_grams').value;
-    if (amount < 5 || amount > 150) {
+    if (amount < {{ min_grams }} || amount > 150) {
         e.preventDefault();
         Swal.fire({
             icon: 'error',

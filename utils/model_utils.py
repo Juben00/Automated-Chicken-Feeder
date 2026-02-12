@@ -57,10 +57,17 @@ def predict_pellets(model, image_file, device=None):
 
 def get_feed_ratio():
     if not os.path.exists(CONFIG_PATH):
-        return {'pellets': 50, 'grams': 10}
+        return {'pellets': 234, 'grams': 6.7, 'grams_per_drop': 6.7}
     with open(CONFIG_PATH, 'r') as f:
-        return json.load(f)
+        data = json.load(f)
+    # Ensure grams_per_drop exists (backward compatible)
+    if 'grams_per_drop' not in data:
+        data['grams_per_drop'] = 6.7
+    return data
 
-def set_feed_ratio(pellets, grams):
+def set_feed_ratio(pellets, grams, grams_per_drop=None):
+    existing = get_feed_ratio()
+    if grams_per_drop is None:
+        grams_per_drop = existing.get('grams_per_drop', 6.7)
     with open(CONFIG_PATH, 'w') as f:
-        json.dump({'pellets': pellets, 'grams': grams}, f)
+        json.dump({'pellets': pellets, 'grams': grams, 'grams_per_drop': grams_per_drop}, f)

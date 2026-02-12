@@ -14,6 +14,13 @@
             <label for="grams" class="form-label">Grams</label>
             <input type="number" class="form-control" id="grams" name="grams" value="{{ ratio.grams }}" min="0.1" step="0.1" required>
         </div>
+        <hr>
+        <h5><i class="fa fa-cog"></i> Servo Dispensing</h5>
+        <div class="mb-3">
+            <label for="grams_per_drop" class="form-label">Grams per servo drop</label>
+            <input type="number" class="form-control" id="grams_per_drop" name="grams_per_drop" value="{{ ratio.grams_per_drop }}" min="0.5" step="0.5" required>
+            <small class="text-muted">How many grams the servo dispenses per single movement (0° ↔ 175°). Measure with a scale to find the exact value.</small>
+        </div>
         <button type="submit" class="btn btn-dark">Update Ratio</button>
     </form>
     <div class="mt-3">

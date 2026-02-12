@@ -512,8 +512,7 @@ from flask_login import current_user
 def restrict_admin_from_user_pages():
     # Only block if admin is logged in and trying to access non-admin pages
     if current_user.is_authenticated and getattr(current_user, 'is_admin', False):
-        admin_paths = ['/admin', '/admin/', '/admin/dashboard', '/admin/config', '/admin/create', '/admin/feed-ratio']
-        if not any(request.path.startswith(p) for p in admin_paths):
+        if not request.path.startswith('/admin'):
             # Allow static and logout
             if not request.path.startswith('/static') and not request.path.startswith('/logout'):
                 return redirect(url_for('admin.dashboard'))
@@ -688,9 +687,12 @@ def iot_dispense():
         except ValueError:
             return jsonify({'error': 'amount_grams must be an integer'}), 400
         
-        # Validate amount
-        if amount_grams < 5 or amount_grams > 150:
-            return jsonify({'error': 'Amount must be between 5 and 150 grams'}), 400
+        # Validate amount using configured grams_per_drop as minimum
+        from utils.model_utils import get_feed_ratio
+        feed_config = get_feed_ratio()
+        min_grams = feed_config.get('grams_per_drop', 6.7)
+        if amount_grams < min_grams or amount_grams > 150:
+            return jsonify({'error': f'Amount must be between {min_grams} and 150 grams'}), 400
         
         # Find next active schedule for this user
         now = datetime.now().time()
@@ -765,6 +767,7 @@ def admin_delete_user(user_id):
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
+    from utils.model_utils import get_feed_ratio
     # Get today's schedules for current user
     today_schedules = FeedSchedule.query.filter_by(created_by=current_user.id, is_active=True).order_by(FeedSchedule.feed_time).all()
     # Get today's dispense logs for current user
@@ -777,10 +780,13 @@ def dashboard():
     total_today = sum(log.amount_grams for log in today_logs if log.status == 'success')
 
     # Remove device registration UI logic and device list from here
+    feed_config = get_feed_ratio()
+    min_grams = feed_config.get('grams_per_drop', 6.7)
     return render_template('dashboard.html', 
                          schedules=today_schedules,
                          logs=today_logs,
-                         total_today=total_today)
+                         total_today=total_today,
+                         min_grams=min_grams)
 
 @app.route('/devices', methods=['GET', 'POST'])
 @login_required
@@ -837,6 +843,7 @@ def schedules():
 @login_required
 def add_schedule():
     from utils.validators import validate_schedule_name, validate_amount_grams, sanitize_string
+    from utils.model_utils import get_feed_ratio
     
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
@@ -856,7 +863,9 @@ def add_schedule():
             flash('Amount must be a valid number.', 'danger')
             return redirect(url_for('add_schedule'))
         
-        is_valid, error_msg = validate_amount_grams(amount_grams)
+        feed_config = get_feed_ratio()
+        min_grams = feed_config.get('grams_per_drop', 6.7)
+        is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
             return redirect(url_for('add_schedule'))
@@ -896,12 +905,15 @@ def add_schedule():
         flash('Schedule added successfully!', 'success')
         return redirect(url_for('schedules'))
     
-    return render_template('add_schedule.html')
+    feed_config = get_feed_ratio()
+    min_grams = feed_config.get('grams_per_drop', 6.7)
+    return render_template('add_schedule.html', min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_schedule(schedule_id):
     from utils.validators import validate_schedule_name, validate_amount_grams, sanitize_string
+    from utils.model_utils import get_feed_ratio
     
     schedule = db.session.get(FeedSchedule, schedule_id)
     if not schedule:
@@ -930,7 +942,9 @@ def edit_schedule(schedule_id):
             flash('Amount must be a valid number.', 'danger')
             return redirect(url_for('edit_schedule', schedule_id=schedule_id))
         
-        is_valid, error_msg = validate_amount_grams(amount_grams)
+        feed_config = get_feed_ratio()
+        min_grams = feed_config.get('grams_per_drop', 6.7)
+        is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
             return redirect(url_for('edit_schedule', schedule_id=schedule_id))
@@ -980,7 +994,9 @@ def edit_schedule(schedule_id):
         flash('Schedule updated successfully!', 'success')
         return redirect(url_for('schedules'))
     
-    return render_template('edit_schedule.html', schedule=schedule)
+    feed_config = get_feed_ratio()
+    min_grams = feed_config.get('grams_per_drop', 6.7)
+    return render_template('edit_schedule.html', schedule=schedule, min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/delete', methods=['POST'])
 @login_required
@@ -1045,9 +1061,12 @@ def manual_dispense():
     data = request.get_json()
     amount_grams = data.get('amount', 0)
     
-    # --- Limit: 5-150 grams per feeding ---
-    if amount_grams < 5 or amount_grams > 150:
-        return jsonify({'error': 'Invalid amount. Must be between 5 and 150 grams'}), 400
+    # --- Limit: grams_per_drop to 150 grams per feeding ---
+    from utils.model_utils import get_feed_ratio
+    feed_config = get_feed_ratio()
+    min_grams = feed_config.get('grams_per_drop', 6.7)
+    if amount_grams < min_grams or amount_grams > 150:
+        return jsonify({'error': f'Invalid amount. Must be between {min_grams} and 150 grams'}), 400
     
     success, error_message, log_id = dispense_feed(
         amount_grams=amount_grams,
@@ -1164,10 +1183,13 @@ def admin_feed_ratio():
         try:
             pellets = int(request.form.get('pellets', 50))
             grams = float(request.form.get('grams', 10))
-            if pellets <= 0 or grams <= 0:
+            grams_per_drop = float(request.form.get('grams_per_drop', 6.7))
+            if pellets <= 0 or grams <= 0 or grams_per_drop <= 0:
                 flash('Values must be positive.', 'danger')
+            elif grams_per_drop > 50:
+                flash('Grams per drop must not exceed 50.', 'danger')
             else:
-                set_feed_ratio(pellets, grams)
+                set_feed_ratio(pellets, grams, grams_per_drop)
                 flash('Feed-to-gram ratio updated!', 'success')
                 return redirect(url_for('admin_feed_ratio'))
         except Exception:

@@ -3,6 +3,8 @@ import requests, json, os
 from servo import activate_servo
 from camera import capture_image
 import time
+import math
+import threading
 
 app = Flask(__name__)
 
@@ -10,22 +12,31 @@ app = Flask(__name__)
 # This persists across requests so we always know where the servo is
 SERVO_STATE_FILE = "/tmp/servo_position.txt"
 
+# Thread locks for servo safety
+servo_position_lock = threading.Lock()
+servo_activation_lock = threading.Lock()
+
+# Safety limit: maximum number of drops per single dispense operation
+MAX_DROPS_PER_DISPENSE = 50
+
 def get_servo_position():
     """Get last known servo position (0 or 175). Defaults to 0."""
-    try:
-        with open(SERVO_STATE_FILE, 'r') as f:
-            pos = int(f.read().strip())
-            return pos if pos in [0, 175] else 0
-    except:
-        return 0  # Default: assume at 0
+    with servo_position_lock:
+        try:
+            with open(SERVO_STATE_FILE, 'r') as f:
+                pos = int(f.read().strip())
+                return pos if pos in [0, 175] else 0
+        except:
+            return 0  # Default: assume at 0
 
 def set_servo_position(position):
     """Save current servo position to state file."""
-    try:
-        with open(SERVO_STATE_FILE, 'w') as f:
-            f.write(str(position))
-    except Exception as e:
-        print(f"Warning: Could not save servo position: {e}")
+    with servo_position_lock:
+        try:
+            with open(SERVO_STATE_FILE, 'w') as f:
+                f.write(str(position))
+        except Exception as e:
+            print(f"Warning: Could not save servo position: {e}")
 
 # Load configuration
 with open("config.json") as f:
@@ -34,6 +45,10 @@ with open("config.json") as f:
 UPLOAD_ENDPOINT = config["upload_endpoint"]
 DEVICE_ID = config["device_id"]
 USER_TOKEN = config["user_token"]
+
+# Default grams per servo drop (can be overridden by server response)
+# 1 rotation (0→175 or 175→0) dispenses 234 pellets = 6.7 grams
+DEFAULT_GRAMS_PER_DROP = 6.7
 
 @app.route('/')
 def home():
@@ -55,7 +70,7 @@ def capture_route():
 # New route: full feed cycle (capture, upload, dispense)
 @app.route('/feed_cycle', methods=['POST'])
 def feed_cycle():
-    """Capture image, upload to website, receive amount to dispense, then activate servo in 5g increments."""
+    """Capture image, upload to website, receive amount to dispense, then activate servo using configured grams_per_drop."""
     # Accept optional schedule_id forwarded from the main server
     req = request.get_json(silent=True) or {}
     schedule_id = req.get('schedule_id')
@@ -81,43 +96,51 @@ def feed_cycle():
             if res.status_code == 200:
                 result = res.json()
                 grams_to_dispense = result.get('grams_to_dispense', 0)
-                # Only dispense if >= 5g
-                if grams_to_dispense >= 5:
-                    # Each position (0° and 180°) drops 5g of feed
-                    # Round UP to nearest 5g - always overfeed slightly rather than underfeed
-                    # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
-                    import math
-                    num_drops = math.ceil(grams_to_dispense / 5)
-                    actual_dispensed = num_drops * 5
-                    print(f"Dispensing {actual_dispensed} grams in {num_drops} drops...")
+                grams_per_drop = result.get('grams_per_drop', DEFAULT_GRAMS_PER_DROP)
+                # Validate grams_per_drop from server
+                try:
+                    grams_per_drop = float(grams_per_drop)
+                    if grams_per_drop <= 0 or grams_per_drop > 50:
+                        grams_per_drop = DEFAULT_GRAMS_PER_DROP
+                except (ValueError, TypeError):
+                    grams_per_drop = DEFAULT_GRAMS_PER_DROP
+
+                # Only dispense if >= one drop worth
+                if grams_to_dispense >= grams_per_drop:
+                    # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
+                    # Round UP - always overfeed slightly rather than underfeed
+                    num_drops = math.ceil(grams_to_dispense / grams_per_drop)
+                    # Safety cap
+                    if num_drops > MAX_DROPS_PER_DISPENSE:
+                        print(f"Warning: capping {num_drops} drops to {MAX_DROPS_PER_DISPENSE}")
+                        num_drops = MAX_DROPS_PER_DISPENSE
+                    actual_dispensed = num_drops * grams_per_drop
+                    print(f"Dispensing {actual_dispensed}g in {num_drops} drops ({grams_per_drop}g each)...")
                     
                     # Run servo in background thread to respond quickly
-                    import threading
                     def run_servo_cycle():
-                        try:
-                            # Get last known position so every command results in actual movement
-                            current_position = get_servo_position()
-                            print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
-                            
-                            for i in range(num_drops):
-                                # Alternate between 0° and 175°, each drop dispenses 5g
-                                next_position = 0 if current_position == 175 else 175
-                                print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing 5g)")
-                                activate_servo(position=next_position)
-                                time.sleep(0.5)
-                                current_position = next_position
-                                set_servo_position(current_position)  # Save position after each move
-                            print(f"Feed cycle complete: dispensed {actual_dispensed}g")
-                        except Exception as e:
-                            print(f"Servo thread error: {e}")
+                        with servo_activation_lock:
+                            try:
+                                current_position = get_servo_position()
+                                print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
+                                
+                                for i in range(num_drops):
+                                    next_position = 0 if current_position == 175 else 175
+                                    print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing {grams_per_drop}g)")
+                                    activate_servo(position=next_position)
+                                    time.sleep(0.5)  # Wait for feed to settle
+                                    current_position = next_position
+                                    set_servo_position(current_position)
+                                print(f"Feed cycle complete: dispensed {actual_dispensed}g")
+                            except Exception as e:
+                                print(f"Servo thread error: {e}")
                     
                     thread = threading.Thread(target=run_servo_cycle, daemon=True)
                     thread.start()
                     
-                    # Return immediately (don't wait for servo to finish)
-                    return jsonify({"status": "success", "dispensed": actual_dispensed, "response": result})
+                    return jsonify({"status": "success", "dispensed": actual_dispensed, "drops": num_drops, "grams_per_drop": grams_per_drop, "response": result})
                 else:
-                    print("Requested amount less than 5g. No dispensing.")
+                    print(f"Requested {grams_to_dispense}g is less than one drop ({grams_per_drop}g). No dispensing.")
                     return jsonify({"status": "no_dispense", "response": result})
             else:
                 return jsonify({"status": "failed", "error": res.text}), 500
@@ -141,34 +164,43 @@ def dispense_route():
         except ValueError:
             return jsonify({'error': 'amount_grams must be an integer'}), 400
 
-        if amount < 5 or amount > 150:
-            return jsonify({'error': 'Amount must be between 5 and 150 grams'}), 400
+        # Read grams_per_drop from request or use default
+        grams_per_drop = data.get('grams_per_drop', DEFAULT_GRAMS_PER_DROP)
+        try:
+            grams_per_drop = float(grams_per_drop)
+            if grams_per_drop <= 0 or grams_per_drop > 50:
+                grams_per_drop = DEFAULT_GRAMS_PER_DROP
+        except (ValueError, TypeError):
+            grams_per_drop = DEFAULT_GRAMS_PER_DROP
 
-        # Each position (0° and 180°) drops 5g of feed
-        # Round UP to nearest 5g - always overfeed slightly rather than underfeed
-        # e.g., 27g -> 30g (6 drops), 25g -> 25g (5 drops)
-        import math
-        num_drops = math.ceil(amount / 5)
-        actual_dispensed = num_drops * 5
+        if amount < grams_per_drop or amount > 150:
+            return jsonify({'error': f'Amount must be between {grams_per_drop} and 150 grams'}), 400
+
+        # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
+        # Round UP - always overfeed slightly rather than underfeed
+        num_drops = math.ceil(amount / grams_per_drop)
+        # Safety cap
+        if num_drops > MAX_DROPS_PER_DISPENSE:
+            return jsonify({'error': f'Requested amount requires {num_drops} drops (max {MAX_DROPS_PER_DISPENSE})'}), 400
+        actual_dispensed = num_drops * grams_per_drop
         
         # Start servo in background thread so we can respond immediately
-        import threading
         def run_servo():
-            try:
-                # Get last known position so every command results in actual movement
-                current_position = get_servo_position()
-                print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
-                
-                for i in range(num_drops):
-                    # Alternate between 0° and 175°, each drop dispenses 5g
-                    next_position = 0 if current_position == 175 else 175
-                    print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}°")
-                    activate_servo(position=next_position)
-                    current_position = next_position
-                    set_servo_position(current_position)  # Save position after each move
-                print(f"Dispensing complete: {actual_dispensed}g in {num_drops} drops")
-            except Exception as e:
-                print(f"Servo thread error: {e}")
+            with servo_activation_lock:
+                try:
+                    current_position = get_servo_position()
+                    print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
+                    
+                    for i in range(num_drops):
+                        next_position = 0 if current_position == 175 else 175
+                        print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° ({grams_per_drop}g)")
+                        activate_servo(position=next_position)
+                        time.sleep(0.5)  # Wait for feed to settle
+                        current_position = next_position
+                        set_servo_position(current_position)
+                    print(f"Dispensing complete: {actual_dispensed}g in {num_drops} drops")
+                except Exception as e:
+                    print(f"Servo thread error: {e}")
         
         thread = threading.Thread(target=run_servo, daemon=True)
         thread.start()

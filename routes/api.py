@@ -190,6 +190,7 @@ def upload_feed_image():
             'pellet_count': pellet_count,
             'grams_detected': grams_present,  # Estimated grams of pellets in feeder
             'grams_to_dispense': grams_to_dispense,
+            'grams_per_drop': config.get('grams_per_drop', 6.7),
             'scheduled_grams': scheduled_grams,
             'remaining_grams': remaining_grams,
             'schedule_lookup_log': schedule_lookup_log,
