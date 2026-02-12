@@ -47,7 +47,7 @@ DEVICE_ID = config["device_id"]
 USER_TOKEN = config["user_token"]
 
 # Default grams per servo drop (fallback only — server always sends the live value)
-DEFAULT_GRAMS_PER_DROP = 6.0
+DEFAULT_GRAMS_PER_DROP = 4.0
 
 @app.route('/')
 def home():
@@ -127,7 +127,6 @@ def feed_cycle():
                                     next_position = 0 if current_position == 175 else 175
                                     print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing {grams_per_drop}g)")
                                     activate_servo(position=next_position)
-                                    time.sleep(0.5)  # Wait for feed to settle
                                     current_position = next_position
                                     set_servo_position(current_position)
                                 print(f"Feed cycle complete: dispensed {actual_dispensed}g")
@@ -194,7 +193,6 @@ def dispense_route():
                         next_position = 0 if current_position == 175 else 175
                         print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° ({grams_per_drop}g)")
                         activate_servo(position=next_position)
-                        time.sleep(0.5)  # Wait for feed to settle
                         current_position = next_position
                         set_servo_position(current_position)
                     print(f"Dispensing complete: {actual_dispensed}g in {num_drops} drops")

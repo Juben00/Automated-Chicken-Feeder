@@ -28,20 +28,20 @@ def activate_servo(position=None):
     try:
         if position == 0:
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees
-            print("Servo at 0° (feed dispensed)")
-            time.sleep(2)  # Wait for feed to drop
+            print("Servo at 0° (feed dispensed — 4g)")
+            time.sleep(3)  # 3-second delay for feed to drop
         elif position == 175:
             pi.set_servo_pulsewidth(servo_pin, SERVO_DISPENSE_PULSE)  # 175 degrees
-            print("Servo at 175° (feed dispensed)")
-            time.sleep(2)  # Wait for feed to drop
+            print("Servo at 175° (feed dispensed — 4g)")
+            time.sleep(3)  # 3-second delay for feed to drop
         else:
             # Default: cycle from 0° to 175° (dispenses at each position)
             pi.set_servo_pulsewidth(servo_pin, SERVO_MIN_PULSE)  # 0 degrees - dispense
-            print("Servo at 0° (feed dispensed)")
-            time.sleep(2)
+            print("Servo at 0° (feed dispensed — 4g)")
+            time.sleep(3)
             pi.set_servo_pulsewidth(servo_pin, SERVO_DISPENSE_PULSE)  # 175 degrees - dispense
-            print("Servo at 175° (feed dispensed)")
-            time.sleep(2)
+            print("Servo at 175° (feed dispensed — 4g)")
+            time.sleep(3)
     except Exception as e:
         print(f"Servo error: {e}")
 

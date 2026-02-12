@@ -138,7 +138,7 @@ def communicate_with_iot_device(amount_grams, device_url=None):
         feed_config = get_feed_ratio()
         payload = {
             'amount_grams': amount_grams,
-            'grams_per_drop': feed_config.get('grams_per_drop', 6.7)
+            'grams_per_drop': feed_config.get('grams_per_drop', 4.0)
         }
 
         # Send request with timeout
@@ -697,7 +697,7 @@ def iot_dispense():
         # Validate amount using configured grams_per_drop as minimum
         from utils.model_utils import get_feed_ratio
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 6.7)
+        min_grams = feed_config.get('grams_per_drop', 4.0)
         if amount_grams < min_grams or amount_grams > 150:
             return jsonify({'error': f'Amount must be between {min_grams} and 150 grams'}), 400
         
@@ -788,7 +788,7 @@ def dashboard():
 
     # Remove device registration UI logic and device list from here
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 6.7)
+    min_grams = feed_config.get('grams_per_drop', 4.0)
     return render_template('dashboard.html', 
                          schedules=today_schedules,
                          logs=today_logs,
@@ -871,7 +871,7 @@ def add_schedule():
             return redirect(url_for('add_schedule'))
         
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 6.7)
+        min_grams = feed_config.get('grams_per_drop', 4.0)
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -913,7 +913,7 @@ def add_schedule():
         return redirect(url_for('schedules'))
     
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 6.7)
+    min_grams = feed_config.get('grams_per_drop', 4.0)
     return render_template('add_schedule.html', min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/edit', methods=['GET', 'POST'])
@@ -950,7 +950,7 @@ def edit_schedule(schedule_id):
             return redirect(url_for('edit_schedule', schedule_id=schedule_id))
         
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 6.7)
+        min_grams = feed_config.get('grams_per_drop', 4.0)
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -1002,7 +1002,7 @@ def edit_schedule(schedule_id):
         return redirect(url_for('schedules'))
     
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 6.7)
+    min_grams = feed_config.get('grams_per_drop', 4.0)
     return render_template('edit_schedule.html', schedule=schedule, min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/delete', methods=['POST'])
@@ -1071,7 +1071,7 @@ def manual_dispense():
     # --- Limit: grams_per_drop to 150 grams per feeding ---
     from utils.model_utils import get_feed_ratio
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 6.7)
+    min_grams = feed_config.get('grams_per_drop', 4.0)
     if amount_grams < min_grams or amount_grams > 150:
         return jsonify({'error': f'Invalid amount. Must be between {min_grams} and 150 grams'}), 400
     
@@ -1190,7 +1190,7 @@ def admin_feed_ratio():
         try:
             pellets = int(request.form.get('pellets', 50))
             grams = float(request.form.get('grams', 10))
-            grams_per_drop = float(request.form.get('grams_per_drop', 6.7))
+            grams_per_drop = float(request.form.get('grams_per_drop', 4.0))
             if pellets <= 0 or grams <= 0 or grams_per_drop <= 0:
                 flash('Values must be positive.', 'danger')
             elif grams_per_drop > 50:
