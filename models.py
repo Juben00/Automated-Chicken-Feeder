@@ -11,14 +11,14 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(120), nullable=False)
     iot_device_url = db.Column(db.String(255), nullable=True)  # e.g., 'http://192.168.1.100:5000' or 'pi_klei'
     is_admin = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now)
 
 class Device(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.String(64), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     token = db.Column(db.String(128), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now)
     user = db.relationship('User', backref=db.backref('devices', lazy=True))
 
 class FeedSchedule(db.Model):
@@ -28,12 +28,12 @@ class FeedSchedule(db.Model):
     amount_grams = db.Column(db.Integer, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now)
     user = db.relationship('User', backref=db.backref('schedules', lazy=True))
 
 class DispenseLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
     amount_grams = db.Column(db.Integer, nullable=False)
     trigger_type = db.Column(db.String(20), nullable=False)
     schedule_id = db.Column(db.Integer, db.ForeignKey('feed_schedule.id'), nullable=True)
