@@ -1214,7 +1214,22 @@ def admin_feed_ratio():
                 return redirect(url_for('admin_feed_ratio'))
         except Exception:
             flash('Invalid input.', 'danger')
-    return render_template('admin/feed_ratio.html', ratio=ratio)
+    return render_template('admin/feed_ratio.html', ratio=ratio, device_url=current_user.iot_device_url)
+
+
+@app.route('/admin/save-device-url', methods=['POST'])
+@login_required
+def admin_save_device_url():
+    """AJAX endpoint to save the IoT device URL for the current admin user."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    data = request.get_json() or {}
+    url = (data.get('device_url') or '').strip()
+    if not url:
+        return jsonify({'error': 'Device URL cannot be empty'}), 400
+    current_user.iot_device_url = url
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/admin/calibrate-valve', methods=['POST'])
@@ -1230,10 +1245,17 @@ def admin_calibrate_valve():
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid duration'}), 400
 
-    # Find the admin's IoT device URL
-    device_url = current_user.iot_device_url
+    # Use device URL from form (allows inline edit) or fall back to saved value
+    device_url = (request.form.get('device_url') or '').strip()
+    if device_url:
+        # Also persist it so future requests use it
+        current_user.iot_device_url = device_url
+        db.session.commit()
+    else:
+        device_url = current_user.iot_device_url
+
     if not device_url:
-        flash('No IoT device URL configured for your account.', 'danger')
+        flash('No IoT device URL configured. Enter the URL in the field above.', 'danger')
         return redirect(url_for('admin_feed_ratio'))
 
     # Build endpoint

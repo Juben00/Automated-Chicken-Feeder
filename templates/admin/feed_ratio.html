@@ -42,7 +42,27 @@
             <p class="text-muted mb-3">
                 Open the valve for a test duration, then weigh the dispensed feed to calculate your exact <strong>grams/second</strong> flow rate.
             </p>
+
+            <!-- IoT Device URL -->
+            <div class="mb-3">
+                <label for="device_url" class="form-label"><i class="fa fa-wifi"></i> IoT Device URL</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="device_url" name="device_url"
+                           value="{{ device_url or '' }}"
+                           placeholder="http://192.168.1.100:5000" required>
+                    <button type="button" class="btn btn-outline-secondary" id="saveDeviceBtn" title="Save device URL">
+                        <i class="fa fa-save"></i>
+                    </button>
+                </div>
+                {% if device_url %}
+                <small class="text-success"><i class="fa fa-check-circle"></i> Connected: <code>{{ device_url }}</code></small>
+                {% else %}
+                <small class="text-danger"><i class="fa fa-exclamation-triangle"></i> No device URL set. Enter your Pi's address above.</small>
+                {% endif %}
+            </div>
+
             <form id="calibrateForm" method="post" action="{{ url_for('admin_calibrate_valve') }}">
+                <input type="hidden" name="device_url" id="calibrate_device_url" value="{{ device_url or '' }}">
                 <div class="mb-3">
                     <label for="duration_seconds" class="form-label">Test duration (seconds)</label>
                     <input type="number" class="form-control" id="duration_seconds" name="duration_seconds" value="5" min="1" max="30" step="1" required>
@@ -55,6 +75,7 @@
             <div class="mt-3 p-3 bg-light rounded" style="border-left:4px solid #ffc107;">
                 <strong>How to calibrate:</strong>
                 <ol class="mb-0 mt-1 small">
+                    <li>Enter your Raspberry Pi's URL above (e.g. <code>http://192.168.1.100:5000</code>) and save it.</li>
                     <li>Place a container on a scale under the feeder valve.</li>
                     <li>Set the test duration (e.g. 5 or 10 seconds) and click <em>Run Calibration Test</em>.</li>
                     <li>Weigh the dispensed feed in grams.</li>
@@ -69,12 +90,43 @@
 
 {% block scripts %}
 <script>
+// Keep the hidden calibration field in sync with the visible device URL input
+var deviceInput = document.getElementById('device_url');
+var hiddenField = document.getElementById('calibrate_device_url');
+deviceInput.addEventListener('input', function() {
+    hiddenField.value = deviceInput.value;
+});
+
+// Save device URL button — stores it on the server via AJAX
+document.getElementById('saveDeviceBtn').addEventListener('click', function() {
+    var url = deviceInput.value.trim();
+    if (!url) { Swal.fire({icon:'warning', title:'Empty URL', text:'Please enter a device URL first.'}); return; }
+    fetch("{{ url_for('admin_save_device_url') }}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({device_url: url})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            Swal.fire({icon:'success', title:'Saved', text:'Device URL updated.', timer:2000, showConfirmButton:false});
+        } else {
+            Swal.fire({icon:'error', title:'Error', text: data.error || 'Failed to save.'});
+        }
+    })
+    .catch(function() {
+        Swal.fire({icon:'error', title:'Error', text:'Network error saving device URL.'});
+    });
+});
+
+// Calibration form — spinner while waiting
 document.getElementById('calibrateForm').addEventListener('submit', function(e) {
+    // Copy latest device URL into hidden field before submit
+    hiddenField.value = deviceInput.value;
     var btn = document.getElementById('calibrateBtn');
     var dur = document.getElementById('duration_seconds').value;
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Valve open for ' + dur + 's …';
-    // Re-enable after the expected duration + buffer
     setTimeout(function() {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-play"></i> Run Calibration Test';
