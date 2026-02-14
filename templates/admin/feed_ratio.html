@@ -33,11 +33,6 @@
                             <input type="number" class="form-control" id="grams_per_second" name="grams_per_second" value="{{ ratio.grams_per_second }}" min="0.1" step="0.1" required>
                             <small class="text-muted">How many grams flow through the valve per second while open. Use the calibration tool on the right to measure this.</small>
                         </div>
-                        <div class="mb-3">
-                            <label for="grams_per_drop" class="form-label">Grams per servo drop <span class="text-muted">(legacy)</span></label>
-                            <input type="number" class="form-control" id="grams_per_drop" name="grams_per_drop" value="{{ ratio.grams_per_drop }}" min="0.5" step="0.5" required>
-                            <small class="text-muted">Kept for backward compatibility.</small>
-                        </div>
                         <button type="submit" class="btn btn-dark w-100"><i class="fa fa-save"></i> Update Settings</button>
                     </form>
                 </div>

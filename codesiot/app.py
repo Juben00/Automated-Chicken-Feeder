@@ -80,9 +80,7 @@ def feed_cycle():
             if res.status_code == 200:
                 result = res.json()
                 grams_to_dispense = result.get('grams_to_dispense', 0)
-                # Server may send grams_per_second; fall back to legacy grams_per_drop as rough estimate
-                grams_per_second = result.get('grams_per_second',
-                                              result.get('grams_per_drop', DEFAULT_GRAMS_PER_SECOND))
+                grams_per_second = result.get('grams_per_second', DEFAULT_GRAMS_PER_SECOND)
                 # Validate
                 try:
                     grams_per_second = float(grams_per_second)
@@ -167,8 +165,7 @@ def dispense_route():
                 return jsonify({'error': 'Amount must be between 1 and 150 grams'}), 400
 
             # Read flow rate from request or use default
-            grams_per_second = data.get('grams_per_second',
-                                        data.get('grams_per_drop', DEFAULT_GRAMS_PER_SECOND))
+            grams_per_second = data.get('grams_per_second', DEFAULT_GRAMS_PER_SECOND)
             try:
                 grams_per_second = float(grams_per_second)
                 if grams_per_second <= 0 or grams_per_second > 50:

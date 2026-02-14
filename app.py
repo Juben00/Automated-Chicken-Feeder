@@ -138,8 +138,7 @@ def communicate_with_iot_device(amount_grams, device_url=None):
         feed_config = get_feed_ratio()
         payload = {
             'amount_grams': amount_grams,
-            'grams_per_second': feed_config.get('grams_per_second', 2.0),
-            'grams_per_drop': feed_config.get('grams_per_drop', 4.0)  # kept for backward compat
+            'grams_per_second': feed_config.get('grams_per_second', 2.0)
         }
 
         # Send request with timeout
@@ -1198,16 +1197,13 @@ def admin_feed_ratio():
         try:
             pellets = int(request.form.get('pellets', 50))
             grams = float(request.form.get('grams', 10))
-            grams_per_drop = float(request.form.get('grams_per_drop', 4.0))
             grams_per_second = float(request.form.get('grams_per_second', 2.0))
-            if pellets <= 0 or grams <= 0 or grams_per_drop <= 0 or grams_per_second <= 0:
+            if pellets <= 0 or grams <= 0 or grams_per_second <= 0:
                 flash('Values must be positive.', 'danger')
-            elif grams_per_drop > 50:
-                flash('Grams per drop must not exceed 50.', 'danger')
             elif grams_per_second > 50:
                 flash('Grams per second must not exceed 50.', 'danger')
             else:
-                set_feed_ratio(pellets, grams, grams_per_drop, grams_per_second)
+                set_feed_ratio(pellets, grams, grams_per_second)
                 flash('Feed-to-gram ratio updated!', 'success')
                 return redirect(url_for('admin_feed_ratio'))
         except Exception:
