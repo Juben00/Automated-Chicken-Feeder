@@ -65,7 +65,7 @@
                 <input type="hidden" name="device_url" id="calibrate_device_url" value="{{ device_url or '' }}">
                 <div class="mb-3">
                     <label for="duration_seconds" class="form-label">Test duration (seconds)</label>
-                    <input type="number" class="form-control" id="duration_seconds" name="duration_seconds" value="5" min="1" max="30" step="1" required>
+                    <input type="number" class="form-control" id="duration_seconds" name="duration_seconds" value="1" min="1" max="30" step="1" required>
                     <small class="text-muted">The valve will open for this many seconds, then close. Max 30s.</small>
                 </div>
                 <button type="submit" class="btn btn-warning" id="calibrateBtn">

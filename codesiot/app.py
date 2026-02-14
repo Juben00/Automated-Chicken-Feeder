@@ -95,8 +95,8 @@ def feed_cycle():
                 if grams_to_dispense > 0:
                     # Calculate how long to keep the valve open
                     dispense_seconds = grams_to_dispense / grams_per_second
-                    # Round up to nearest 0.5s so we slightly overfeed rather than underfeed
-                    dispense_seconds = math.ceil(dispense_seconds * 2) / 2.0
+                    # Round up to nearest 0.1s so we slightly overfeed rather than underfeed
+                    dispense_seconds = math.ceil(dispense_seconds * 10) / 10.0
                     # Safety cap
                     if dispense_seconds > MAX_DISPENSE_SECONDS:
                         print(f"Warning: capping {dispense_seconds}s to {MAX_DISPENSE_SECONDS}s")
@@ -175,8 +175,8 @@ def dispense_route():
             except (ValueError, TypeError):
                 grams_per_second = DEFAULT_GRAMS_PER_SECOND
 
-            # Round up to nearest 0.5s
-            duration = math.ceil((amount / grams_per_second) * 2) / 2.0
+            # Round up to nearest 0.1s
+            duration = math.ceil((amount / grams_per_second) * 10) / 10.0
             if duration > MAX_DISPENSE_SECONDS:
                 return jsonify({'error': f'Requested amount requires {duration}s (max {MAX_DISPENSE_SECONDS}s)'}), 400
 

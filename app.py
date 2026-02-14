@@ -695,13 +695,11 @@ def iot_dispense():
         except ValueError:
             return jsonify({'error': 'amount_grams must be an integer'}), 400
         
-        # Validate amount — minimum is the smallest practical valve open (0.5s worth)
+        # Validate amount — minimum is the smallest practical valve open (0.1s worth)
         from utils.model_utils import get_feed_ratio
         feed_config = get_feed_ratio()
         gps = feed_config.get('grams_per_second', 2.0)
-        min_grams = round(0.5 * gps, 1)  # minimum ~0.5s valve open
-        if min_grams < 1:
-            min_grams = 1
+        min_grams = max(1, round(0.1 * gps, 1))  # minimum ~0.1s valve open
         if amount_grams < min_grams or amount_grams > 150:
             return jsonify({'error': f'Amount must be between {min_grams} and 150 grams'}), 400
         
@@ -793,7 +791,7 @@ def dashboard():
     # Minimum dispense amount based on flow rate (0.5s valve open)
     feed_config = get_feed_ratio()
     gps = feed_config.get('grams_per_second', 2.0)
-    min_grams = max(1, round(0.5 * gps, 1))
+    min_grams = max(1, round(0.1 * gps, 1))
     return render_template('dashboard.html', 
                          schedules=today_schedules,
                          logs=today_logs,
@@ -877,7 +875,7 @@ def add_schedule():
         
         feed_config = get_feed_ratio()
         gps = feed_config.get('grams_per_second', 2.0)
-        min_grams = max(1, round(0.5 * gps, 1))
+        min_grams = max(1, round(0.1 * gps, 1))
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -920,7 +918,7 @@ def add_schedule():
     
     feed_config = get_feed_ratio()
     gps = feed_config.get('grams_per_second', 2.0)
-    min_grams = max(1, round(0.5 * gps, 1))
+    min_grams = max(1, round(0.1 * gps, 1))
     return render_template('add_schedule.html', min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/edit', methods=['GET', 'POST'])
@@ -958,7 +956,7 @@ def edit_schedule(schedule_id):
         
         feed_config = get_feed_ratio()
         gps = feed_config.get('grams_per_second', 2.0)
-        min_grams = max(1, round(0.5 * gps, 1))
+        min_grams = max(1, round(0.1 * gps, 1))
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -1011,7 +1009,7 @@ def edit_schedule(schedule_id):
     
     feed_config = get_feed_ratio()
     gps = feed_config.get('grams_per_second', 2.0)
-    min_grams = max(1, round(0.5 * gps, 1))
+    min_grams = max(1, round(0.1 * gps, 1))
     return render_template('edit_schedule.html', schedule=schedule, min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/delete', methods=['POST'])
@@ -1077,11 +1075,11 @@ def manual_dispense():
     data = request.get_json()
     amount_grams = data.get('amount', 0)
     
-    # --- Limit: minimum practical valve open (0.5s) to 150 grams per feeding ---
+    # --- Limit: minimum practical valve open (0.1s) to 150 grams per feeding ---
     from utils.model_utils import get_feed_ratio
     feed_config = get_feed_ratio()
     gps = feed_config.get('grams_per_second', 2.0)
-    min_grams = max(1, round(0.5 * gps, 1))
+    min_grams = max(1, round(0.1 * gps, 1))
     if amount_grams < min_grams or amount_grams > 150:
         return jsonify({'error': f'Invalid amount. Must be between {min_grams} and 150 grams'}), 400
     
