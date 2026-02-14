@@ -141,6 +141,7 @@ def dispense_route():
     """
     try:
         data = request.get_json() or {}
+        grams_per_second = DEFAULT_GRAMS_PER_SECOND  # will be overwritten if caller sends it
 
         # Option A: caller specifies duration directly
         duration = data.get('duration_seconds')
@@ -180,7 +181,7 @@ def dispense_route():
             if duration > MAX_DISPENSE_SECONDS:
                 return jsonify({'error': f'Requested amount requires {duration}s (max {MAX_DISPENSE_SECONDS}s)'}), 400
 
-        estimated_grams = round(duration * DEFAULT_GRAMS_PER_SECOND, 1)
+        estimated_grams = round(duration * grams_per_second, 1)
 
         # Start servo in background thread so we can respond immediately
         def run_servo():
