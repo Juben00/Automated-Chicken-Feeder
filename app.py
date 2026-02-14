@@ -133,12 +133,13 @@ def communicate_with_iot_device(amount_grams, device_url=None):
         else:
             endpoint = f"http://{device_url}:5000/dispense"
 
-        # Prepare the payload — include current grams_per_drop so IoT uses live config
+        # Prepare the payload — include current flow-rate so IoT uses live config
         from utils.model_utils import get_feed_ratio
         feed_config = get_feed_ratio()
         payload = {
             'amount_grams': amount_grams,
-            'grams_per_drop': feed_config.get('grams_per_drop', 4.0)
+            'grams_per_second': feed_config.get('grams_per_second', 2.0),
+            'grams_per_drop': feed_config.get('grams_per_drop', 4.0)  # kept for backward compat
         }
 
         # Send request with timeout
@@ -694,10 +695,13 @@ def iot_dispense():
         except ValueError:
             return jsonify({'error': 'amount_grams must be an integer'}), 400
         
-        # Validate amount using configured grams_per_drop as minimum
+        # Validate amount — minimum is the smallest practical valve open (0.5s worth)
         from utils.model_utils import get_feed_ratio
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 4.0)
+        gps = feed_config.get('grams_per_second', 2.0)
+        min_grams = round(0.5 * gps, 1)  # minimum ~0.5s valve open
+        if min_grams < 1:
+            min_grams = 1
         if amount_grams < min_grams or amount_grams > 150:
             return jsonify({'error': f'Amount must be between {min_grams} and 150 grams'}), 400
         
@@ -786,9 +790,10 @@ def dashboard():
     # Calculate total feed dispensed today
     total_today = sum(log.amount_grams for log in today_logs if log.status == 'success')
 
-    # Remove device registration UI logic and device list from here
+    # Minimum dispense amount based on flow rate (0.5s valve open)
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 4.0)
+    gps = feed_config.get('grams_per_second', 2.0)
+    min_grams = max(1, round(0.5 * gps, 1))
     return render_template('dashboard.html', 
                          schedules=today_schedules,
                          logs=today_logs,
@@ -871,7 +876,8 @@ def add_schedule():
             return redirect(url_for('add_schedule'))
         
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 4.0)
+        gps = feed_config.get('grams_per_second', 2.0)
+        min_grams = max(1, round(0.5 * gps, 1))
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -913,7 +919,8 @@ def add_schedule():
         return redirect(url_for('schedules'))
     
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 4.0)
+    gps = feed_config.get('grams_per_second', 2.0)
+    min_grams = max(1, round(0.5 * gps, 1))
     return render_template('add_schedule.html', min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/edit', methods=['GET', 'POST'])
@@ -950,7 +957,8 @@ def edit_schedule(schedule_id):
             return redirect(url_for('edit_schedule', schedule_id=schedule_id))
         
         feed_config = get_feed_ratio()
-        min_grams = feed_config.get('grams_per_drop', 4.0)
+        gps = feed_config.get('grams_per_second', 2.0)
+        min_grams = max(1, round(0.5 * gps, 1))
         is_valid, error_msg = validate_amount_grams(amount_grams, min_grams=min_grams)
         if not is_valid:
             flash(error_msg, 'danger')
@@ -1002,7 +1010,8 @@ def edit_schedule(schedule_id):
         return redirect(url_for('schedules'))
     
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 4.0)
+    gps = feed_config.get('grams_per_second', 2.0)
+    min_grams = max(1, round(0.5 * gps, 1))
     return render_template('edit_schedule.html', schedule=schedule, min_grams=min_grams)
 
 @app.route('/schedules/<int:schedule_id>/delete', methods=['POST'])
@@ -1068,10 +1077,11 @@ def manual_dispense():
     data = request.get_json()
     amount_grams = data.get('amount', 0)
     
-    # --- Limit: grams_per_drop to 150 grams per feeding ---
+    # --- Limit: minimum practical valve open (0.5s) to 150 grams per feeding ---
     from utils.model_utils import get_feed_ratio
     feed_config = get_feed_ratio()
-    min_grams = feed_config.get('grams_per_drop', 4.0)
+    gps = feed_config.get('grams_per_second', 2.0)
+    min_grams = max(1, round(0.5 * gps, 1))
     if amount_grams < min_grams or amount_grams > 150:
         return jsonify({'error': f'Invalid amount. Must be between {min_grams} and 150 grams'}), 400
     
@@ -1191,17 +1201,66 @@ def admin_feed_ratio():
             pellets = int(request.form.get('pellets', 50))
             grams = float(request.form.get('grams', 10))
             grams_per_drop = float(request.form.get('grams_per_drop', 4.0))
-            if pellets <= 0 or grams <= 0 or grams_per_drop <= 0:
+            grams_per_second = float(request.form.get('grams_per_second', 2.0))
+            if pellets <= 0 or grams <= 0 or grams_per_drop <= 0 or grams_per_second <= 0:
                 flash('Values must be positive.', 'danger')
             elif grams_per_drop > 50:
                 flash('Grams per drop must not exceed 50.', 'danger')
+            elif grams_per_second > 50:
+                flash('Grams per second must not exceed 50.', 'danger')
             else:
-                set_feed_ratio(pellets, grams, grams_per_drop)
+                set_feed_ratio(pellets, grams, grams_per_drop, grams_per_second)
                 flash('Feed-to-gram ratio updated!', 'success')
                 return redirect(url_for('admin_feed_ratio'))
         except Exception:
             flash('Invalid input.', 'danger')
     return render_template('admin/feed_ratio.html', ratio=ratio)
+
+
+@app.route('/admin/calibrate-valve', methods=['POST'])
+@login_required
+def admin_calibrate_valve():
+    """Send a test valve-open command to the IoT device for calibration."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    try:
+        duration = float(request.form.get('duration_seconds', 5))
+        if duration <= 0 or duration > 30:
+            return jsonify({'error': 'Duration must be between 0 and 30 seconds'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid duration'}), 400
+
+    # Find the admin's IoT device URL
+    device_url = current_user.iot_device_url
+    if not device_url:
+        flash('No IoT device URL configured for your account.', 'danger')
+        return redirect(url_for('admin_feed_ratio'))
+
+    # Build endpoint
+    device_url = device_url.rstrip('/')
+    if device_url.startswith('http://') or device_url.startswith('https://'):
+        endpoint = f"{device_url}/activate_servo"
+    else:
+        endpoint = f"http://{device_url}:5000/activate_servo"
+
+    try:
+        response = requests.post(
+            endpoint,
+            json={'duration_seconds': duration},
+            timeout=max(duration + 10, 15)
+        )
+        if response.status_code == 200:
+            flash(f'Calibration test: valve opened for {duration}s. Weigh the feed to calculate grams/second.', 'success')
+        else:
+            flash(f'Device error: {response.text}', 'danger')
+    except requests.exceptions.Timeout:
+        flash('Request to device timed out. Is the device online?', 'danger')
+    except requests.exceptions.ConnectionError:
+        flash('Could not connect to IoT device. Check the device URL and network.', 'danger')
+    except Exception as e:
+        flash(f'Calibration error: {str(e)}', 'danger')
+
+    return redirect(url_for('admin_feed_ratio'))
 
 def initialize_app():
     """Initialize database, admin user, and scheduler - called on startup"""

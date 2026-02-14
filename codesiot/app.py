@@ -8,35 +8,11 @@ import threading
 
 app = Flask(__name__)
 
-# Track servo position to ensure every drop command results in actual movement
-# This persists across requests so we always know where the servo is
-SERVO_STATE_FILE = "/tmp/servo_position.txt"
-
-# Thread locks for servo safety
-servo_position_lock = threading.Lock()
+# Thread lock to prevent overlapping servo activations
 servo_activation_lock = threading.Lock()
 
-# Safety limit: maximum number of drops per single dispense operation
-MAX_DROPS_PER_DISPENSE = 50
-
-def get_servo_position():
-    """Get last known servo position (0 or 175). Defaults to 0."""
-    with servo_position_lock:
-        try:
-            with open(SERVO_STATE_FILE, 'r') as f:
-                pos = int(f.read().strip())
-                return pos if pos in [0, 175] else 0
-        except:
-            return 0  # Default: assume at 0
-
-def set_servo_position(position):
-    """Save current servo position to state file."""
-    with servo_position_lock:
-        try:
-            with open(SERVO_STATE_FILE, 'w') as f:
-                f.write(str(position))
-        except Exception as e:
-            print(f"Warning: Could not save servo position: {e}")
+# Safety limit: maximum valve-open duration per single dispense (seconds)
+MAX_DISPENSE_SECONDS = 60
 
 # Load configuration
 with open("config.json") as f:
@@ -46,8 +22,9 @@ UPLOAD_ENDPOINT = config["upload_endpoint"]
 DEVICE_ID = config["device_id"]
 USER_TOKEN = config["user_token"]
 
-# Default grams per servo drop (fallback only — server always sends the live value)
-DEFAULT_GRAMS_PER_DROP = 4.0
+# Default flow rate: grams dispensed per second of valve-open time
+# (fallback only — server always sends the live value via grams_per_second)
+DEFAULT_GRAMS_PER_SECOND = 2.0
 
 @app.route('/')
 def home():
@@ -55,8 +32,16 @@ def home():
 
 @app.route('/activate_servo', methods=['POST'])
 def servo_route():
-    activate_servo()
-    return jsonify({"status": "success", "message": "Servo activated."})
+    data = request.get_json(silent=True) or {}
+    duration = data.get('duration_seconds', 5)
+    try:
+        duration = float(duration)
+        if duration <= 0:
+            duration = 5
+    except (ValueError, TypeError):
+        duration = 5
+    activate_servo(duration_seconds=duration)
+    return jsonify({"status": "success", "message": f"Valve opened for {duration}s."})
 
 @app.route('/capture_image', methods=['POST'])
 def capture_route():
@@ -69,7 +54,7 @@ def capture_route():
 # New route: full feed cycle (capture, upload, dispense)
 @app.route('/feed_cycle', methods=['POST'])
 def feed_cycle():
-    """Capture image, upload to website, receive amount to dispense, then activate servo using configured grams_per_drop."""
+    """Capture image, upload to website, receive amount to dispense, then open valve for the calculated duration."""
     # Accept optional schedule_id forwarded from the main server
     req = request.get_json(silent=True) or {}
     schedule_id = req.get('schedule_id')
@@ -95,48 +80,50 @@ def feed_cycle():
             if res.status_code == 200:
                 result = res.json()
                 grams_to_dispense = result.get('grams_to_dispense', 0)
-                grams_per_drop = result.get('grams_per_drop', DEFAULT_GRAMS_PER_DROP)
-                # Validate grams_per_drop from server
+                # Server may send grams_per_second; fall back to legacy grams_per_drop as rough estimate
+                grams_per_second = result.get('grams_per_second',
+                                              result.get('grams_per_drop', DEFAULT_GRAMS_PER_SECOND))
+                # Validate
                 try:
-                    grams_per_drop = float(grams_per_drop)
-                    if grams_per_drop <= 0 or grams_per_drop > 50:
-                        grams_per_drop = DEFAULT_GRAMS_PER_DROP
+                    grams_per_second = float(grams_per_second)
+                    if grams_per_second <= 0 or grams_per_second > 50:
+                        grams_per_second = DEFAULT_GRAMS_PER_SECOND
                 except (ValueError, TypeError):
-                    grams_per_drop = DEFAULT_GRAMS_PER_DROP
+                    grams_per_second = DEFAULT_GRAMS_PER_SECOND
 
-                # Dispense if any amount is needed (rounds up to at least 1 drop)
+                # Dispense if any amount is needed
                 if grams_to_dispense > 0:
-                    # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
-                    # Round UP - always overfeed slightly rather than underfeed
-                    num_drops = math.ceil(grams_to_dispense / grams_per_drop)
+                    # Calculate how long to keep the valve open
+                    dispense_seconds = grams_to_dispense / grams_per_second
+                    # Round up to nearest 0.5s so we slightly overfeed rather than underfeed
+                    dispense_seconds = math.ceil(dispense_seconds * 2) / 2.0
                     # Safety cap
-                    if num_drops > MAX_DROPS_PER_DISPENSE:
-                        print(f"Warning: capping {num_drops} drops to {MAX_DROPS_PER_DISPENSE}")
-                        num_drops = MAX_DROPS_PER_DISPENSE
-                    actual_dispensed = num_drops * grams_per_drop
-                    print(f"Dispensing {actual_dispensed}g in {num_drops} drops ({grams_per_drop}g each)...")
-                    
+                    if dispense_seconds > MAX_DISPENSE_SECONDS:
+                        print(f"Warning: capping {dispense_seconds}s to {MAX_DISPENSE_SECONDS}s")
+                        dispense_seconds = MAX_DISPENSE_SECONDS
+                    actual_dispensed = dispense_seconds * grams_per_second
+                    print(f"Dispensing ~{actual_dispensed:.1f}g — valve open for {dispense_seconds}s ({grams_per_second} g/s)…")
+
                     # Run servo in background thread to respond quickly
                     def run_servo_cycle():
                         with servo_activation_lock:
                             try:
-                                current_position = get_servo_position()
-                                print(f"Starting feed cycle: {num_drops} drops, servo currently at {current_position}°")
-                                
-                                for i in range(num_drops):
-                                    next_position = 0 if current_position == 175 else 175
-                                    print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° (dispensing {grams_per_drop}g)")
-                                    activate_servo(position=next_position)
-                                    current_position = next_position
-                                    set_servo_position(current_position)
-                                print(f"Feed cycle complete: dispensed {actual_dispensed}g")
+                                print(f"Starting feed cycle: valve open {dispense_seconds}s")
+                                activate_servo(duration_seconds=dispense_seconds)
+                                print(f"Feed cycle complete: dispensed ~{actual_dispensed:.1f}g")
                             except Exception as e:
                                 print(f"Servo thread error: {e}")
-                    
+
                     thread = threading.Thread(target=run_servo_cycle, daemon=True)
                     thread.start()
-                    
-                    return jsonify({"status": "success", "dispensed": actual_dispensed, "drops": num_drops, "grams_per_drop": grams_per_drop, "response": result})
+
+                    return jsonify({
+                        "status": "success",
+                        "dispensed": round(actual_dispensed, 1),
+                        "duration_seconds": dispense_seconds,
+                        "grams_per_second": grams_per_second,
+                        "response": result
+                    })
                 else:
                     print(f"No feed needed (grams_to_dispense={grams_to_dispense}). Skipping.")
                     return jsonify({"status": "no_dispense", "response": result})
@@ -148,62 +135,67 @@ def feed_cycle():
 
 @app.route('/dispense', methods=['POST'])
 def dispense_route():
-    """Accept JSON {"amount_grams": int} and run servo cycles accordingly.
+    """Accept JSON {"amount_grams": int} or {"duration_seconds": float} and open
+    the valve for the calculated/given duration.
     Returns JSON immediately while servo runs in background.
     """
     try:
         data = request.get_json() or {}
-        # accept either amount_grams or legacy 'amount'
-        amount = data.get('amount_grams') if data.get('amount_grams') is not None else data.get('amount')
-        if amount is None:
-            return jsonify({'error': 'amount_grams required'}), 400
-        try:
-            amount = int(amount)
-        except ValueError:
-            return jsonify({'error': 'amount_grams must be an integer'}), 400
 
-        # Read grams_per_drop from request or use default
-        grams_per_drop = data.get('grams_per_drop', DEFAULT_GRAMS_PER_DROP)
-        try:
-            grams_per_drop = float(grams_per_drop)
-            if grams_per_drop <= 0 or grams_per_drop > 50:
-                grams_per_drop = DEFAULT_GRAMS_PER_DROP
-        except (ValueError, TypeError):
-            grams_per_drop = DEFAULT_GRAMS_PER_DROP
+        # Option A: caller specifies duration directly
+        duration = data.get('duration_seconds')
 
-        if amount < 1 or amount > 150:
-            return jsonify({'error': 'Amount must be between 1 and 150 grams'}), 400
+        if duration is not None:
+            try:
+                duration = float(duration)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'duration_seconds must be a number'}), 400
+            if duration <= 0 or duration > MAX_DISPENSE_SECONDS:
+                return jsonify({'error': f'duration_seconds must be between 0 and {MAX_DISPENSE_SECONDS}'}), 400
+        else:
+            # Option B: caller specifies grams — we convert to duration
+            amount = data.get('amount_grams') if data.get('amount_grams') is not None else data.get('amount')
+            if amount is None:
+                return jsonify({'error': 'amount_grams or duration_seconds required'}), 400
+            try:
+                amount = float(amount)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'amount_grams must be a number'}), 400
 
-        # Each servo rotation (0→175 or 175→0) drops grams_per_drop of feed
-        # Round UP - always overfeed slightly rather than underfeed
-        num_drops = math.ceil(amount / grams_per_drop)
-        # Safety cap
-        if num_drops > MAX_DROPS_PER_DISPENSE:
-            return jsonify({'error': f'Requested amount requires {num_drops} drops (max {MAX_DROPS_PER_DISPENSE})'}), 400
-        actual_dispensed = num_drops * grams_per_drop
-        
+            if amount < 1 or amount > 150:
+                return jsonify({'error': 'Amount must be between 1 and 150 grams'}), 400
+
+            # Read flow rate from request or use default
+            grams_per_second = data.get('grams_per_second',
+                                        data.get('grams_per_drop', DEFAULT_GRAMS_PER_SECOND))
+            try:
+                grams_per_second = float(grams_per_second)
+                if grams_per_second <= 0 or grams_per_second > 50:
+                    grams_per_second = DEFAULT_GRAMS_PER_SECOND
+            except (ValueError, TypeError):
+                grams_per_second = DEFAULT_GRAMS_PER_SECOND
+
+            # Round up to nearest 0.5s
+            duration = math.ceil((amount / grams_per_second) * 2) / 2.0
+            if duration > MAX_DISPENSE_SECONDS:
+                return jsonify({'error': f'Requested amount requires {duration}s (max {MAX_DISPENSE_SECONDS}s)'}), 400
+
+        estimated_grams = round(duration * DEFAULT_GRAMS_PER_SECOND, 1)
+
         # Start servo in background thread so we can respond immediately
         def run_servo():
             with servo_activation_lock:
                 try:
-                    current_position = get_servo_position()
-                    print(f"Starting dispense: {num_drops} drops, servo currently at {current_position}°")
-                    
-                    for i in range(num_drops):
-                        next_position = 0 if current_position == 175 else 175
-                        print(f"Drop {i+1}/{num_drops}: Moving {current_position}° → {next_position}° ({grams_per_drop}g)")
-                        activate_servo(position=next_position)
-                        current_position = next_position
-                        set_servo_position(current_position)
-                    print(f"Dispensing complete: {actual_dispensed}g in {num_drops} drops")
+                    print(f"Starting dispense: valve open {duration}s (~{estimated_grams}g)")
+                    activate_servo(duration_seconds=duration)
+                    print(f"Dispensing complete: valve was open {duration}s")
                 except Exception as e:
                     print(f"Servo thread error: {e}")
-        
+
         thread = threading.Thread(target=run_servo, daemon=True)
         thread.start()
-        
-        # Return response immediately (don't wait for servo to finish)
-        return jsonify({'success': True, 'dispensed': actual_dispensed}), 200
+
+        return jsonify({'success': True, 'duration_seconds': duration, 'estimated_grams': estimated_grams}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

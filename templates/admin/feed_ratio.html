@@ -5,7 +5,7 @@
     <div>
         <h2><i class="fa fa-balance-scale"></i> Feed-to-Gram Ratio Configuration</h2>
     </div>
-    <form method="post" class="mt-3" style="max-width:400px;">
+    <form method="post" class="mt-3" style="max-width:480px;">
         <div class="mb-3">
             <label for="pellets" class="form-label">Pellets</label>
             <input type="number" class="form-control" id="pellets" name="pellets" value="{{ ratio.pellets }}" min="1" required>
@@ -15,16 +15,70 @@
             <input type="number" class="form-control" id="grams" name="grams" value="{{ ratio.grams }}" min="0.1" step="0.1" required>
         </div>
         <hr>
-        <h5><i class="fa fa-cog"></i> Servo Dispensing</h5>
+        <h5><i class="fa fa-cog"></i> Servo / Valve Dispensing</h5>
         <div class="mb-3">
-            <label for="grams_per_drop" class="form-label">Grams per servo drop</label>
+            <label for="grams_per_drop" class="form-label">Grams per servo drop <span class="text-muted">(legacy)</span></label>
             <input type="number" class="form-control" id="grams_per_drop" name="grams_per_drop" value="{{ ratio.grams_per_drop }}" min="0.5" step="0.5" required>
-            <small class="text-muted">How many grams the servo dispenses per single movement (0° ↔ 175°). Measure with a scale to find the exact value.</small>
+            <small class="text-muted">Kept for backward compatibility. The valve now uses <strong>grams per second</strong> below.</small>
         </div>
-        <button type="submit" class="btn btn-dark">Update Ratio</button>
+        <div class="mb-3">
+            <label for="grams_per_second" class="form-label"><i class="fa fa-tachometer-alt"></i> Grams per second (flow rate)</label>
+            <input type="number" class="form-control" id="grams_per_second" name="grams_per_second" value="{{ ratio.grams_per_second }}" min="0.1" step="0.1" required>
+            <small class="text-muted">How many grams flow through the valve per second while open. Use the calibration tool below to measure this.</small>
+        </div>
+        <button type="submit" class="btn btn-dark"><i class="fa fa-save"></i> Update Settings</button>
     </form>
     <div class="mt-3">
         <p class="text-muted">Example: If 50 pellets = 10 grams, enter 50 and 10.</p>
     </div>
+
+    <!-- Valve Calibration Tool -->
+    <hr class="my-4">
+    <div class="card admin-card" style="max-width:480px;">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fa fa-flask"></i> Valve Calibration Tool</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">
+                Open the valve for a test duration, then weigh the dispensed feed to calculate your exact <strong>grams/second</strong> flow rate.
+            </p>
+            <form id="calibrateForm" method="post" action="{{ url_for('admin_calibrate_valve') }}">
+                <div class="mb-3">
+                    <label for="duration_seconds" class="form-label">Test duration (seconds)</label>
+                    <input type="number" class="form-control" id="duration_seconds" name="duration_seconds" value="5" min="1" max="30" step="1" required>
+                    <small class="text-muted">The valve will open for this many seconds, then close. Max 30s.</small>
+                </div>
+                <button type="submit" class="btn btn-warning" id="calibrateBtn">
+                    <i class="fa fa-play"></i> Run Calibration Test
+                </button>
+            </form>
+            <div class="mt-3 p-3 bg-light rounded" style="border-left:4px solid #ffc107;">
+                <strong>How to calibrate:</strong>
+                <ol class="mb-0 mt-1 small">
+                    <li>Place a container on a scale under the feeder valve.</li>
+                    <li>Set the test duration (e.g. 5 or 10 seconds) and click <em>Run Calibration Test</em>.</li>
+                    <li>Weigh the dispensed feed in grams.</li>
+                    <li>Calculate: <code>grams &divide; seconds = grams per second</code></li>
+                    <li>Enter the result in the <strong>Grams per second</strong> field above and save.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('calibrateForm').addEventListener('submit', function(e) {
+    var btn = document.getElementById('calibrateBtn');
+    var dur = document.getElementById('duration_seconds').value;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Valve open for ' + dur + 's …';
+    // Re-enable after the expected duration + buffer
+    setTimeout(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> Run Calibration Test';
+    }, (parseInt(dur) + 12) * 1000);
+});
+</script>
 {% endblock %}

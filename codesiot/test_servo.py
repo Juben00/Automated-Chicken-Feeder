@@ -1,34 +1,29 @@
 #!/usr/bin/env python3
 """
-Simple servo test on Raspberry Pi using RPi.GPIO PWM.
-Run this to manually test the servo motor.
+Simple valve servo test on Raspberry Pi using pigpio.
+Run this to manually test the valve: opens for 5 seconds then closes.
+Usage: python test_servo.py [duration_seconds]
 """
 
-import RPi.GPIO as GPIO
+import sys
 import time
 
-servo_pin = 18  # GPIO18 (Pin 12) - VERIFIED WORKING
+# Import the valve function from the main servo module
+from servo import activate_servo, VALVE_OPEN_ANGLE, VALVE_CLOSED_ANGLE
 
-print("Testing servo on GPIO18...")
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(servo_pin, GPIO.OUT)
-pwm = GPIO.PWM(servo_pin, 50)  # 50Hz
-pwm.start(0)
+duration = 5  # default test duration
+if len(sys.argv) > 1:
+    try:
+        duration = float(sys.argv[1])
+    except ValueError:
+        print(f"Invalid duration '{sys.argv[1]}', using default {duration}s")
 
-try:
-    print("\nMoving to 0° (feed drops)...")
-    pwm.ChangeDutyCycle(2)
-    time.sleep(1)
+print(f"=== Valve Servo Test ===")
+print(f"  Closed angle : {VALVE_CLOSED_ANGLE}°")
+print(f"  Open angle   : {VALVE_OPEN_ANGLE}°")
+print(f"  Test duration: {duration}s")
+print()
 
-    print("Moving to 180° (feed drops)...")
-    pwm.ChangeDutyCycle(12)
-    time.sleep(1)
+activate_servo(duration_seconds=duration)
 
-    print("Back to 0° (feed drops)...")
-    pwm.ChangeDutyCycle(2)
-    time.sleep(1)
-
-    print("Servo test complete! (3 drops total)")
-finally:
-    pwm.stop()
-    GPIO.cleanup()
+print(f"\nValve test complete! Valve was open for {duration}s.")
