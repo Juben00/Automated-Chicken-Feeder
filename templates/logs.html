@@ -139,10 +139,7 @@
                             data-status="{{ log.status }}"
                             data-date="{{ log.timestamp.strftime('%Y-%m-%d') }}">
                             <td>
-                                <div>
-                                    <strong>{{ log.timestamp.strftime('%Y-%m-%d') }}</strong>
-                                </div>
-                                <small class="text-muted">{{ log.timestamp.strftime('%H:%M:%S') }}</small>
+                                {{ log.timestamp.strftime('%b %d, %Y at %I:%M:%S %p') }}
                             </td>
                             <td>
                                 {% if log.trigger_type == 'manual' %}

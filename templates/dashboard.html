@@ -195,7 +195,7 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>Time</th>
+                                <th>Date &amp; time</th>
                                 <th>Type</th>
                                 <th>Amount</th>
                                 <th>Status</th>
@@ -206,7 +206,7 @@
                             {% for log in logs[:10] %}
                             <tr>
                                 <td>
-                                    <small>{{ log.timestamp.strftime('%H:%M:%S') }}</small>
+                                    {{ log.timestamp.strftime('%b %d, %Y at %I:%M %p') }}
                                 </td>
                                 <td>
                                     {% if log.trigger_type == 'manual' %}
