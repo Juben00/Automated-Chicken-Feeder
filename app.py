@@ -1115,6 +1115,68 @@ def logs():
         )
     return render_template('logs.html', logs=logs)
 
+
+@app.route('/api/logs/recent')
+@login_required
+def api_logs_recent():
+    """
+    Lightweight API endpoint to fetch the most recent dispense logs.
+    Used by the logs page for auto-refresh so new Raspberry Pi actions
+    appear without a full page reload.
+    """
+    limit = request.args.get('limit', 20, type=int)
+    limit = max(1, min(limit, 100))  # safety clamp
+
+    if not current_user.is_admin:
+        query = DispenseLog.query.filter_by(triggered_by=current_user.id)
+    else:
+        query = DispenseLog.query
+
+    recent_logs = query.order_by(DispenseLog.timestamp.desc()).limit(limit).all()
+
+    def serialize_log(log):
+        schedule_name = None
+        schedule_time = None
+        if log.schedule:
+            schedule_name = log.schedule.name
+            try:
+                schedule_time = log.schedule.feed_time.strftime('%I:%M %p')
+            except Exception:
+                schedule_time = None
+
+        image_url = None
+        if log.image_path:
+            try:
+                image_url = url_for('static', filename=log.image_path)
+            except Exception:
+                image_url = None
+
+        username = None
+        if log.user:
+            username = log.user.username
+        else:
+            username = 'System'
+
+        return {
+            'id': log.id,
+            'timestamp': log.timestamp.isoformat() if log.timestamp else None,
+            'trigger_type': log.trigger_type,
+            'status': log.status,
+            'amount_grams': log.amount_grams,
+            'schedule_name': schedule_name,
+            'schedule_time': schedule_time,
+            'error_message': log.error_message,
+            'pellet_count': log.pellet_count,
+            'grams_detected': log.grams_detected,
+            'grams_dispensed': log.grams_dispensed,
+            'image_url': image_url,
+            'username': username,
+        }
+
+    return jsonify({
+        'logs': [serialize_log(l) for l in recent_logs]
+    })
+
 @app.route('/api/stats')
 @login_required
 def api_stats():

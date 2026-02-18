@@ -274,6 +274,127 @@
 <script>
 let currentSort = { column: 'timestamp', direction: 'desc' };
 
+async function fetchLatestLogs() {
+    try {
+        const response = await fetch('{{ url_for("api_logs_recent") }}?limit=20', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        if (!data.logs) {
+            return;
+        }
+
+        const tbody = document.getElementById('logs-table-body');
+        if (!tbody) {
+            return;
+        }
+
+        const rows = data.logs.map(log => {
+            const ts = log.timestamp ? new Date(log.timestamp) : null;
+            const formattedTs = ts
+                ? ts.toLocaleString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                })
+                : '';
+
+            const isManual = log.trigger_type === 'manual';
+            const typeBadge = isManual
+                ? `<span class="badge bg-info">
+                        <i class="fas fa-hand-pointer me-1"></i>Manual
+                   </span>`
+                : `<span class="badge bg-primary">
+                        <i class="fas fa-clock me-1"></i>Scheduled
+                   </span>`;
+
+            const isSuccess = log.status === 'success';
+            const statusBadge = isSuccess
+                ? `<span class="badge bg-success">
+                        <i class="fas fa-check me-1"></i>Success
+                   </span>`
+                : `<span class="badge bg-danger">
+                        <i class="fas fa-times me-1"></i>Failed
+                   </span>`;
+
+            const scheduleOrError = (() => {
+                if (log.schedule_name) {
+                    const timePart = log.schedule_time ? `<small class="text-muted">${log.schedule_time}</small>` : '';
+                    return `
+                        <div>
+                            <strong>${log.schedule_name}</strong>
+                        </div>
+                        ${timePart}
+                    `;
+                }
+                if (log.error_message) {
+                    const shortErr = log.error_message.length > 100
+                        ? log.error_message.slice(0, 100) + '...'
+                        : log.error_message;
+                    return `
+                        <div class="text-danger" title="${log.error_message}" style="cursor: help;">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            <small>${shortErr}</small>
+                        </div>
+                    `;
+                }
+                return `<span class="text-muted">-</span>`;
+            })();
+
+            const hasAnalysis = log.pellet_count !== null || log.grams_detected !== null || log.grams_dispensed !== null;
+            const analysisCell = hasAnalysis
+                ? `<button class="btn btn-sm btn-outline-info"
+                           onclick="showFeedDetails(${log.pellet_count || 0}, ${log.grams_detected || 0}, ${log.grams_dispensed || 0}, ${log.amount_grams || 0})"
+                           title="View feed analysis details">
+                        <i class="fas fa-chart-pie me-1"></i>Details
+                   </button>`
+                : `<span class="text-muted">-</span>`;
+
+            const imageCell = log.image_url
+                ? `<img src="${log.image_url}"
+                         alt="Feed Image"
+                         class="img-thumbnail"
+                         style="width: 60px; height: 45px; object-fit: cover; cursor: pointer;"
+                         onclick="viewImage('${log.image_url}')"
+                         title="Click to view full image">`
+                : `<span class="text-muted"><i class="fas fa-image"></i> -</span>`;
+
+            const username = log.username || 'System';
+            const dateAttr = ts ? ts.toISOString().split('T')[0] : '';
+
+            return `
+                <tr class="log-row"
+                    data-type="${log.trigger_type || ''}"
+                    data-status="${log.status || ''}"
+                    data-date="${dateAttr}">
+                    <td>${formattedTs}</td>
+                    <td>${typeBadge}</td>
+                    <td><span class="badge bg-light text-dark">${log.amount_grams || 0}g</span></td>
+                    <td>${statusBadge}</td>
+                    <td style="max-width: 350px;">${scheduleOrError}</td>
+                    <td>${analysisCell}</td>
+                    <td>${imageCell}</td>
+                    <td><small>${username}</small></td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = rows.join('');
+        applyFilters();
+    } catch (e) {
+        // fail silently – logs page will still work without auto-refresh
+        console.error('Failed to auto-refresh logs', e);
+    }
+}
+
 function applyFilters() {
     const typeFilter = document.getElementById('filter-type').value;
     const statusFilter = document.getElementById('filter-status').value;
@@ -389,6 +510,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Uncomment to auto-filter to today:
     // document.getElementById('filter-date').value = today;
     // applyFilters();
+
+    // Periodically refresh logs so new Raspberry Pi actions
+    // appear without requiring a full page reload.
+    setInterval(fetchLatestLogs, 5000);
 });
 </script>
 {% endblock %}
