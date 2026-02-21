@@ -1,7 +1,7 @@
-from flask import Blueprint, request, jsonify, current_app
-from utils.model_utils import get_model, predict_pellets
+from flask import Blueprint, request, jsonify, current_app, send_file, Response
+from utils.model_utils import get_model, predict_pellets, predict_pellets_with_positions, annotate_image_with_pellets
 from utils.model_utils import get_feed_ratio
-from flask_login import current_user
+from flask_login import current_user, login_required
 import datetime
 import os
 import uuid
@@ -197,4 +197,37 @@ def upload_feed_image():
             'image_path': image_path  # Return the saved image path
         })
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/feed_image/<int:log_id>/annotated')
+@login_required
+def feed_image_annotated(log_id):
+    """
+    Returns the feed image with red dots plotted on each detected pellet.
+    Used by the dispense log when viewing a captured image.
+    """
+    from models import DispenseLog
+    from io import BytesIO
+
+    log = DispenseLog.query.get_or_404(log_id)
+    if not current_user.is_admin and log.triggered_by != current_user.id:
+        return jsonify({'error': 'Forbidden'}), 403
+    if not log.image_path:
+        return jsonify({'error': 'No image for this log'}), 404
+
+    full_path = os.path.join(current_app.root_path, 'static', log.image_path)
+    if not os.path.exists(full_path):
+        return jsonify({'error': 'Image file not found'}), 404
+
+    try:
+        model = get_model()
+        _, positions = predict_pellets_with_positions(model, full_path)
+        img = annotate_image_with_pellets(full_path, positions, dot_radius=4, dot_color=(255, 0, 0))
+        buf = BytesIO()
+        img.save(buf, format='JPEG', quality=90)
+        buf.seek(0)
+        return send_file(buf, mimetype='image/jpeg', as_attachment=False)
+    except Exception as e:
+        logger.exception('feed_image_annotated: %s', e)
         return jsonify({'error': str(e)}), 500

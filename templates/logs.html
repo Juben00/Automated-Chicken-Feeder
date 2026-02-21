@@ -198,7 +198,7 @@
                                          alt="Feed Image" 
                                          class="img-thumbnail" 
                                          style="width: 60px; height: 45px; object-fit: cover; cursor: pointer;"
-                                         onclick="viewImage('{{ url_for('static', filename=log.image_path) }}')"
+                                         onclick="viewImage('{{ url_for('static', filename=log.image_path) }}', {{ log.id }})"
                                          title="Click to view full image">
                                 {% else %}
                                     <span class="text-muted"><i class="fas fa-image"></i> -</span>
@@ -363,7 +363,7 @@ async function fetchLatestLogs() {
                          alt="Feed Image"
                          class="img-thumbnail"
                          style="width: 60px; height: 45px; object-fit: cover; cursor: pointer;"
-                         onclick="viewImage('${log.image_url}')"
+                         onclick="viewImage('${log.image_url}', ${log.id})"
                          title="Click to view full image">`
                 : `<span class="text-muted"><i class="fas fa-image"></i> -</span>`;
 
@@ -448,11 +448,12 @@ function sortTable(column) {
     console.log(`Sorting by ${column}`);
 }
 
-// View image in SweetAlert popup
-function viewImage(imageUrl) {
+// View image in SweetAlert popup (with pellet detection overlay when logId provided)
+function viewImage(imageUrl, logId) {
+    const url = logId ? `/api/feed_image/${logId}/annotated` : imageUrl;
     Swal.fire({
-        title: 'Feed Image',
-        imageUrl: imageUrl,
+        title: 'Feed Image (red dots = detected pellets)',
+        imageUrl: url,
         imageWidth: '100%',
         imageHeight: 'auto',
         imageAlt: 'Feed Image',
