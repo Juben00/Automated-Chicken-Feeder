@@ -56,10 +56,17 @@ def predict_pellets(model, image_file, device=None):
     return pellet_count
 
 
-def _find_density_peaks(density_map, min_distance=3, threshold_factor=0.3):
+def _find_density_peaks(density_map, min_distance=3, threshold_factor=0.3, border_margin=0.05, max_peaks=None):
     """
     Find local maxima in density map as pellet centers.
-    Returns list of (y, x) in density map coordinates.
+    Returns list of (y, x, value) in density map coordinates, sorted by value descending.
+
+    Args:
+        density_map: The density map tensor/array from the model.
+        min_distance: Minimum pixel distance between peaks.
+        threshold_factor: Peaks below this fraction of the max density value are discarded.
+        border_margin: Fraction of the map dimensions to exclude at each edge (0.05 = 5%).
+        max_peaks: If set, only keep the top N peaks by density value.
     """
     import numpy as np
     if hasattr(density_map, 'cpu'):
@@ -72,19 +79,36 @@ def _find_density_peaks(density_map, min_distance=3, threshold_factor=0.3):
     total = arr.sum()
     if total <= 0:
         return []
-    threshold = max(arr.min(), float(total) / (h * w) * threshold_factor)
-    # Local maxima: pixel is max in (2*md+1)x(2*md+1) window
+
+    max_val = arr.max()
+    if max_val <= 0:
+        return []
+
+    threshold = max_val * threshold_factor
+
+    margin_h = int(h * border_margin)
+    margin_w = int(w * border_margin)
+    y_lo, y_hi = margin_h, h - margin_h
+    x_lo, x_hi = margin_w, w - margin_w
+
     md = min_distance
     pad = np.pad(arr, md, mode='constant', constant_values=-np.inf)
     peaks = []
     for i in range(md, h + md):
         for j in range(md, w + md):
+            oy, ox = i - md, j - md
+            if oy < y_lo or oy >= y_hi or ox < x_lo or ox >= x_hi:
+                continue
             v = pad[i, j]
             if v < threshold:
                 continue
             window = pad[i - md:i + md + 1, j - md:j + md + 1]
             if v >= window.max():
-                peaks.append((i - md, j - md))
+                peaks.append((oy, ox, float(v)))
+
+    peaks.sort(key=lambda p: p[2], reverse=True)
+    if max_peaks is not None and len(peaks) > max_peaks:
+        peaks = peaks[:max_peaks]
     return peaks
 
 
@@ -107,13 +131,21 @@ def predict_pellets_with_positions(model, image_file, device=None):
     with torch.no_grad():
         output = model(input_tensor)
     pellet_count = float(output.sum().item())
-    peaks = _find_density_peaks(output, min_distance=2, threshold_factor=0.5)
-    # Scale from density map (e.g. 64x64) to 512x512 then to original size
+
+    expected_count = max(1, int(round(pellet_count)))
+    peaks = _find_density_peaks(
+        output,
+        min_distance=3,
+        threshold_factor=0.15,
+        border_margin=0.05,
+        max_peaks=expected_count,
+    )
+
     dm_h, dm_w = output.shape[2], output.shape[3]
     scale_x = orig_w / dm_w
     scale_y = orig_h / dm_h
     positions = []
-    for py, px in peaks:
+    for py, px, _val in peaks:
         x = int(px * scale_x)
         y = int(py * scale_y)
         positions.append((x, y))
