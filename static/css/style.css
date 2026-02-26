@@ -259,6 +259,13 @@ body {
     background-color: var(--success-color);
 }
 
+/* Feed image modal sizing (SweetAlert) */
+.feed-image-modal {
+    max-width: 80vw;
+    max-height: 70vh;
+    object-fit: contain;
+}
+
 .status-inactive {
     background-color: var(--secondary-color);
 }
